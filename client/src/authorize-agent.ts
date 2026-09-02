@@ -13,7 +13,9 @@ import {
 
 const agentDid = process.env.AGENT_DID;
 if (!agentDid || !/^did:t3n:[a-fA-F0-9]{40}$/.test(agentDid)) {
-  throw new Error("AGENT_DID must be the session-derived did:t3n identifier for the separate agent");
+  throw new Error(
+    "AGENT_DID must be the session-derived did:t3n identifier for the nominal agent credential",
+  );
 }
 
 const registration = await readRegistration();

@@ -1,13 +1,15 @@
 # Architecture
 
-## Principals and responsibilities
+## Credential paths and observed T3N identity
 
 ```mermaid
 flowchart TB
-    Admin[Tenant Admin<br/>T3N_API_KEY] --> R[Register trading-policy@0.1.0]
-    Admin --> M[Provision/administer<br/>trading-policy-config]
+    Admin[Tenant/Admin credential<br/>T3N_API_KEY] --> Shared[Shared observed T3N DID]
+    Agent[Nominal Agent credential<br/>AGENT_KEY] --> Shared
+    Shared --> R[Register/administer<br/>trading-policy@0.1.0]
+    Shared --> M[Provision/administer<br/>trading-policy-config]
     Owner[Data Owner<br/>USER_KEY] --> G[Grant Agent DID<br/>evaluate-trade only]
-    Agent[Agent DID<br/>AGENT_KEY only] --> I[Invoke evaluate-trade<br/>with data-owner pii_did]
+    Shared --> I[Invoke evaluate-trade<br/>with data-owner pii_did]
     R --> T[T3N]
     M --> T
     G --> T
@@ -18,18 +20,18 @@ flowchart TB
     C --> D[Deterministic<br/>ALLOW or DENY]
 ```
 
-The tenant administrator, data owner, and agent are distinct security principals. Their credentials are consumed by different modules and intended to run in separate processes:
+The code separates credentials into different modules and intended processes:
 
 - `tenant-admin.ts` reads only `T3N_API_KEY` and constructs `TenantClient`.
 - `data-owner.ts` reads only `USER_KEY` and constructs a plain `T3nClient` for SelfOnly delegation administration.
-- `agent.ts` reads only `AGENT_KEY` and constructs a plain `T3nClient` for business invocation.
+- `agent.ts` reads only the nominal `AGENT_KEY` and constructs a plain `T3nClient` for business invocation.
 - `demo.ts` imports only the agent connector; it has no tenant control-plane path.
 
-A prompt-injected agent does not possess `T3N_API_KEY` or `USER_KEY`, so it cannot register contracts, change map ACLs, rewrite policy, or expand its own authorization grant through these application paths.
+This is an application-architecture separation, not a demonstrated T3N authorization boundary. On 2026-09-02, different tenant/admin and nominal-agent credential values both authenticated as `did:t3n:f62da0c78b9ffd0fce31193d4e7db02f272adc0e`. Using only `AGENT_KEY`, all probed tenant control-plane reads succeeded. No write permission was tested, so the ability to register contracts, change ACLs, rewrite policy, or perform other admin mutations is unknown.
 
 ## Agent onboarding and authorization
 
-The project uses the documented public/self-authenticating agent flow. A fresh credited claim-page key authenticates as its own T3N session and produces a session-returned agent DID. Public agent-card creation/hosting is a manual CLI onboarding step.
+The project used the public/self-authenticating agent onboarding flow. The separately issued credential produced its own authenticated session but resolved to the same observed DID as the tenant/admin credential. Possible account-scoped credential or onboarding semantics require Terminal 3 clarification.
 
 The data owner uses the SDK helper implementing the documented `agent-auth-update` flow. In SDK 5.5.0, `updateAgentAuth` performs the read/merge/write, preserves unrelated agent/contract rows, and writes this grant:
 
@@ -43,7 +45,7 @@ readScopes   = []
 allowedHosts = []
 ```
 
-The live agent invocation supplies the authorizing data-owner DID as `pii_did`. The contract imports the vendored `host:interfaces/authorisation@2.1.0` interface and calls `check-authorized` before policy access. A missing, revoked, wrong-contract, wrong-version, or wrong-function grant therefore fails closed.
+The live nominal-agent invocation supplies the authorizing data-owner DID as `pii_did`. The contract imports the vendored `host:interfaces/authorisation@2.1.0` interface and calls `check-authorized` before policy access. This remains a valuable policy gate. In the tested environment, however, the next live evaluation is a self/shared-DID authorization test and must not be represented as proof of cross-principal delegation.
 
 The WIT surface is confirmed locally, but an empty-host authorization check for a KV-only tenant contract has not yet been exercised on testnet. That live compatibility check is explicitly pending.
 
@@ -51,7 +53,7 @@ The WIT surface is confirmed locally, but an empty-host authorization check for 
 
 ```mermaid
 sequenceDiagram
-    participant Agent as Agent T3nClient
+    participant Agent as Nominal Agent T3nClient<br/>(shared observed DID)
     participant T3N as T3N runtime
     participant Auth as Authorisation policy
     participant Contract as Rust TEE contract

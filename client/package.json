@@ -10,7 +10,8 @@
     "setup": "tsx src/setup.ts",
     "authorize": "tsx src/authorize-agent.ts",
     "demo": "tsx src/demo.ts",
-    "demo:live": "tsx src/demo.ts --live"
+    "demo:live": "tsx src/demo.ts --live",
+    "probe:agent-privileges": "tsx src/probe-agent-privileges.ts"
   },
   "dependencies": {
     "@terminal3/t3n-sdk": "5.5.0"
