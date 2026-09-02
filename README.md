@@ -67,7 +67,7 @@ This demo uses the current documented public/self-authenticating agent flow beca
 1. Obtain a fresh credited agent key from the T3N claim page. Do not reuse the tenant key.
 2. In an agent-only shell, use the SDK CLI with `--api-key $env:AGENT_KEY` to run `whoami`, scaffold/host the public agent card, and verify it.
 3. Copy the session-returned DID into `AGENT_DID` in the separate data-owner authorization shell.
-4. After the contract is registered, run `npm run authorize` with `USER_KEY` and `AGENT_DID`. The SDK's read/merge/write helper submits the documented `agent-auth-update` flow for only `trading-policy@0.1.0::evaluate-trade`, with empty data scopes and no outbound hosts, while preserving unrelated grants.
+4. After the contract is registered, run `npm run authorize` with `USER_KEY` and `AGENT_DID`. The SDK helper implementing the documented `agent-auth-update` flow performs a read/merge/write for only `trading-policy@0.1.0::evaluate-trade`, with empty data scopes and no outbound hosts, while preserving unrelated grants.
 5. `npm run demo:live` uses only `AGENT_KEY`; it reads non-secret local authorization metadata to supply the data-owner DID as `pii_did`.
 
 `USER_KEY` is required for the authorization bootstrap because the grant is a SelfOnly data-owner write. It is not required or read by the agent execution path.
@@ -153,7 +153,7 @@ The contract SHA-256 hashes its serialized decision and calls the vendored `kv-s
 
 ## TESTNET-ONLY trust limitation
 
-The current official Quickstart uses `fetchTrustedManifest("testnet")`, which is the correct secure design. In the reproduced environment, that call returned a malformed-manifest error. The client therefore isolates an explicit `{ unsafe_trust_server: true }` workaround for this bounty testnet only.
+SDK 5.5.0 exposes the `fetchTrustedManifest("testnet")` path. In an earlier reproduced attempt, that call returned a malformed-manifest error. The client therefore isolates an explicit `{ unsafe_trust_server: true }` workaround for this bounty testnet only. Remote testnet state may have changed and must be rechecked before live deployment.
 
 This disables server attestation verification and is not production-safe. Production must restore a verified TrustAnchor and fail closed on verification failure. See [docs/BUGS.md](docs/BUGS.md).
 

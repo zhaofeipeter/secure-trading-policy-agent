@@ -31,7 +31,7 @@ A prompt-injected agent does not possess `T3N_API_KEY` or `USER_KEY`, so it cann
 
 The project uses the documented public/self-authenticating agent flow. A fresh credited claim-page key authenticates as its own T3N session and produces a session-returned agent DID. Public agent-card creation/hosting is a manual CLI onboarding step.
 
-The data owner uses the SDK 5.5.0 `updateAgentAuth` read/merge/write helper for the publicly documented `agent-auth-update` flow. It preserves unrelated agent/contract rows and writes this grant:
+The data owner uses the SDK helper implementing the documented `agent-auth-update` flow. In SDK 5.5.0, `updateAgentAuth` performs the read/merge/write, preserves unrelated agent/contract rows, and writes this grant:
 
 ```text
 agentDid     = <session-derived agent DID>

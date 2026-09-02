@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test:parser": "tsx src/policy-decision.test.ts",
     "register": "tsx src/register-contract.ts",
     "setup": "tsx src/setup.ts",
     "authorize": "tsx src/authorize-agent.ts",

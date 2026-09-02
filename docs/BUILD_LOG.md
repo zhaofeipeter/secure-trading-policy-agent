@@ -13,11 +13,11 @@ The selected model is a public/self-authenticated agent because the existing ten
 - data-owner grant bootstrap: `USER_KEY` plus public `AGENT_DID` through `connectDataOwner()`
 - business invocation: `AGENT_KEY` through `connectAgent()`
 
-The current Agent Auth guide documents a data-owner-signed `agent-auth-update`. SDK 5.5.0 confirms the `updateAgentAuth` read/merge/write helper for that flow and agent-side contract execution. The helper preserves unrelated grant rows instead of replacing the entire policy. The vendored `host:interfaces/authorisation@2.1.0` WIT confirms `check-authorized(list<string>)`, and the remediated WASM build validates the Rust binding and empty-host call locally.
+The current Agent Auth guide documents a data-owner-signed `agent-auth-update`. SDK 5.5.0 confirms `updateAgentAuth` as the SDK helper implementing that documented flow, plus agent-side contract execution. The helper preserves unrelated grant rows instead of replacing the entire policy. The vendored `host:interfaces/authorisation@2.1.0` WIT confirms `check-authorized(list<string>)`, and the remediated WASM build validates the Rust binding and empty-host call locally.
 
 ## Trust-anchor finding
 
-The current official Quickstart correctly uses `fetchTrustedManifest("testnet")`. In the reproduced environment, the SDK reported that the testnet manifest response was malformed. This project therefore isolates `{ unsafe_trust_server: true }` as an explicit testnet-only workaround. It disables server attestation verification and is not production-safe.
+SDK 5.5.0 exposes the `fetchTrustedManifest("testnet")` path. In an earlier reproduced attempt, the SDK reported that the testnet manifest response was malformed. This project therefore isolates `{ unsafe_trust_server: true }` as an explicit testnet-only workaround. It disables server attestation verification and is not production-safe. Remote state may have changed and must be rechecked before live deployment.
 
 ## Remediation QA
 
@@ -32,6 +32,7 @@ These are commands actually run after the CTO changes.
 | Rust WASM Clippy | `cargo clippy --target wasm32-wasip2 --release -- -D warnings` | Passed, zero warnings |
 | Client install | `npm install` | Passed: up to date, 23 packages audited, 0 vulnerabilities |
 | TypeScript | `npm run typecheck` | Passed |
+| Policy-decision parser | `npm run test:parser` | Passed: 6/6 protocol assertions |
 | Offline demo | `npm run demo` | Passed: 8/8 deterministic scenarios |
 | Static unit/field scan | `rg` over Rust/TypeScript source excluding dependencies and build output | No Rust `f32`/`f64`, legacy wire fields, or blind `as PolicyDecision` cast |
 | Secret scan | `rg` over tracked project content excluding dependencies and build output | No T3N-key-shaped or 64-hex-private-key value found |

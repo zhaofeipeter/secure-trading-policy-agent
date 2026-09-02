@@ -40,7 +40,7 @@ The demo does not independently retrieve or verify a transaction receipt. The cu
 - Separate `connectTenantAdmin()`, `connectDataOwner()`, and `connectAgent()` paths
 - Guarded contract registration with version fixed at `0.1.0`
 - Recoverable policy-map provisioning whose ACL update runs on every setup attempt
-- Data-owner `agent-auth-update` script scoped to the one evaluation function and preserving unrelated grants
+- Data-owner authorization using the SDK helper implementing the documented `agent-auth-update` flow, scoped to one function and preserving unrelated grants
 - Runtime validation of decoded live policy decisions
 - Eight-scenario offline and live CLI demo paths
 - Architecture, security, reproduced-bug, build, and reproduction documentation

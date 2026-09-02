@@ -1,6 +1,8 @@
 # T3N / Bounty Engineering Findings
 
-Only issues personally reproduced in the supplied environment are recorded here. Current official documentation correctly uses `@terminal3/t3n-sdk` and `fetchTrustedManifest()`; neither SDK package naming nor the requirement to configure a TrustAnchor is reported as a platform bug.
+Only issues personally reproduced in the supplied environment are recorded here. The current Quickstart uses the `@terminal3/t3n-sdk` package name, so no package-name mismatch is reported.
+
+Separately, SDK 5.5.0 exposes `fetchTrustedManifest()`; the requirement to make an explicit trust decision is not itself reported as a platform bug.
 
 ## BUG-001 — T3N testnet trust manifest was malformed
 
@@ -22,4 +24,4 @@ Only issues personally reproduced in the supplied environment are recorded here.
 
 ## Integration status
 
-SDK 5.5.0 type declarations confirm the client surfaces used for tenant map lifecycle, entry set/get, contract registration, agent sessions, the `agent-auth-update` read/merge/write helper, and contract execution. `BUILD_LOG.md` records only commands actually executed. No successful registration, grant, policy mutation, or live invocation is claimed.
+SDK 5.5.0 type declarations confirm the client surfaces used for tenant map lifecycle, entry set/get, contract registration, agent sessions, the SDK helper implementing the documented `agent-auth-update` flow, and contract execution. `BUILD_LOG.md` records only commands actually executed. No successful registration, grant, policy mutation, or live invocation is claimed.

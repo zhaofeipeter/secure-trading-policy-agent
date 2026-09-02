@@ -27,25 +27,64 @@ export function parsePolicyDecision(value: unknown): PolicyDecision {
   ) {
     throw new Error("Malformed policy decision: invalid reasons");
   }
-  if (typeof candidate.symbol !== "string" || candidate.symbol.length === 0) {
+
+  const reasons = candidate.reasons as ReasonCode[];
+  if (candidate.decision === "ALLOW" && reasons.length !== 0) {
+    throw new Error("Malformed policy decision: ALLOW must not contain reasons");
+  }
+  if (candidate.decision === "DENY" && reasons.length === 0) {
+    throw new Error("Malformed policy decision: DENY must contain at least one reason");
+  }
+
+  const hasSymbol = Object.hasOwn(candidate, "symbol");
+  const hasSide = Object.hasOwn(candidate, "side");
+  const hasNotional = Object.hasOwn(candidate, "notionalUsdCents");
+
+  if (hasSymbol && (typeof candidate.symbol !== "string" || candidate.symbol.length === 0)) {
     throw new Error("Malformed policy decision: invalid symbol");
   }
-  if (typeof candidate.side !== "string" || candidate.side.length === 0) {
+  if (hasSide && (typeof candidate.side !== "string" || candidate.side.length === 0)) {
     throw new Error("Malformed policy decision: invalid side");
   }
   if (
-    typeof candidate.notionalUsdCents !== "number" ||
-    !Number.isSafeInteger(candidate.notionalUsdCents) ||
-    candidate.notionalUsdCents < 0
+    hasNotional &&
+    (typeof candidate.notionalUsdCents !== "number" ||
+      !Number.isSafeInteger(candidate.notionalUsdCents) ||
+      candidate.notionalUsdCents < 0)
   ) {
     throw new Error("Malformed policy decision: invalid notionalUsdCents");
   }
 
+  const isInvalidInput = reasons.includes("INVALID_INPUT");
+  if (!isInvalidInput && (!hasSymbol || !hasSide || !hasNotional)) {
+    throw new Error("Malformed policy decision: evaluated decisions require context fields");
+  }
+
+  if (isInvalidInput) {
+    return {
+      decision: "DENY",
+      reasons: reasons as [ReasonCode, ...ReasonCode[]],
+      ...(hasSymbol ? { symbol: candidate.symbol as string } : {}),
+      ...(hasSide ? { side: candidate.side as string } : {}),
+      ...(hasNotional ? { notionalUsdCents: candidate.notionalUsdCents as number } : {}),
+    };
+  }
+
+  if (candidate.decision === "ALLOW") {
+    return {
+      decision: "ALLOW",
+      reasons: [],
+      symbol: candidate.symbol as string,
+      side: candidate.side as string,
+      notionalUsdCents: candidate.notionalUsdCents as number,
+    };
+  }
+
   return {
-    decision: candidate.decision,
-    reasons: candidate.reasons,
-    symbol: candidate.symbol,
-    side: candidate.side,
-    notionalUsdCents: candidate.notionalUsdCents,
+    decision: "DENY",
+    reasons: reasons as [ReasonCode, ...ReasonCode[]],
+    symbol: candidate.symbol as string,
+    side: candidate.side as string,
+    notionalUsdCents: candidate.notionalUsdCents as number,
   };
 }

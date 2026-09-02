@@ -34,13 +34,34 @@ export type ReasonCode =
   | "INVALID_SIDE"
   | "INVALID_INPUT";
 
-export interface PolicyDecision {
-  decision: Decision;
-  reasons: ReasonCode[];
+export interface PolicyDecisionContext {
   symbol: string;
   side: string;
   notionalUsdCents: number;
 }
+
+export interface AllowPolicyDecision extends PolicyDecisionContext {
+  decision: "ALLOW";
+  reasons: [];
+}
+
+export interface DenyPolicyDecision extends PolicyDecisionContext {
+  decision: "DENY";
+  reasons: [ReasonCode, ...ReasonCode[]];
+}
+
+export interface InvalidInputPolicyDecision {
+  decision: "DENY";
+  reasons: [ReasonCode, ...ReasonCode[]];
+  symbol?: string;
+  side?: string;
+  notionalUsdCents?: number;
+}
+
+export type PolicyDecision =
+  | AllowPolicyDecision
+  | DenyPolicyDecision
+  | InvalidInputPolicyDecision;
 
 export interface ContractRegistration {
   tenantDid: string;

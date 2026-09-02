@@ -49,7 +49,7 @@ Production must obtain a valid signed TrustAnchor, verify the server/TEE attesta
 - The testnet trust bypass means the client cannot cryptographically establish that it is talking to an attested production-grade server.
 - `dailyLossUsdCents` is supplied by the caller. A malicious agent could lie about it. Production must derive cumulative loss from trusted protected ledger/accounting state.
 - `confidenceBps` is an agent-supplied signal. The contract checks its range and threshold but cannot prove calibration or provenance.
-- The authorization script uses the SDK's `agent-auth-update` read/merge/write helper to preserve unrelated grants, but it does not independently read back and compare the platform's effective authorization decision.
+- The authorization script uses the SDK helper implementing the documented `agent-auth-update` flow to preserve unrelated grants, but it does not independently read back and compare the platform's effective authorization decision.
 - Policy setup converges the SDK-exposed visibility, ACL, and admin-readable settings. It cannot verify hidden platform state that the SDK does not expose.
 - The offline demo duplicates policy rules for presentation and is not a security boundary. Only `demo:live` exercises the deployed TEE contract.
 - This proof of concept has not received an independent security audit and must not control real funds.
