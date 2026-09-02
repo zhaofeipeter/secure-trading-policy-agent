@@ -1,0 +1,16 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Local deployment state (contains the tenant DID)
+client/contract-registration.json
+
+# Build and dependency output
+contract/target/
+client/node_modules/
+
+# Tooling and OS files
+*.log
+.DS_Store
+Thumbs.db

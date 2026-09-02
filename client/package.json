@@ -1,0 +1,21 @@
+{
+  "name": "secure-trading-policy-agent-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "register": "tsx src/register-contract.ts",
+    "setup": "tsx src/setup.ts",
+    "demo": "tsx src/demo.ts",
+    "demo:live": "tsx src/demo.ts --live"
+  },
+  "dependencies": {
+    "@terminal3/t3n-sdk": "5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,26 @@
+/// Secure trading policy authorization contract.
+///
+/// The host supplies the tenant identity and durable tenant-scoped KV store.
+/// This component has no HTTP, wallet, exchange, or trading capability.
+package z:trading-policy@0.1.0;
+
+world trading-policy {
+    import host:tenant/tenant-context@1.0.0;
+    import host:interfaces/kv-store@2.1.0;
+
+    export contracts;
+}
+
+interface contracts {
+    /// Standard envelope used by node-callable tenant contracts.
+    record generic-input {
+        input: option<list<u8>>,
+        user-profile: option<list<u8>>,
+        context: option<list<u8>>,
+    }
+
+    /// Evaluate a proposed trade against policy stored at
+    /// z:<authenticated-tenant>:trading-policy/current.
+    /// This function authorizes or denies; it never executes a trade.
+    evaluate-trade: func(req: generic-input) -> result<list<u8>, string>;
+}
