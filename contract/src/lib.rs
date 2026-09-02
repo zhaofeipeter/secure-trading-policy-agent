@@ -15,7 +15,7 @@ use alloc::{string::String, vec::Vec};
 #[cfg(target_arch = "wasm32")]
 use models::Policy;
 
-pub const CONTRACT_VERSION: &str = "0.1.0";
+pub const CONTRACT_VERSION: &str = "0.1.1";
 pub const POLICY_MAP_TAIL: &str = "trading-policy-config";
 pub const POLICY_KEY: &[u8] = b"current";
 
@@ -42,15 +42,8 @@ impl exports::z::trading_policy::contracts::Guest for Component {
 
 #[cfg(target_arch = "wasm32")]
 fn evaluate_trade_wasm(input: Option<&[u8]>) -> Result<Vec<u8>, String> {
-    use crate::host::{
-        interfaces::{authorisation, kv_store},
-        tenant::tenant_context,
-    };
+    use crate::host::{interfaces::kv_store, tenant::tenant_context};
     use sha2::{Digest, Sha256};
-
-    let no_egress_hosts: Vec<String> = Vec::new();
-    authorisation::check_authorized(&no_egress_hosts)
-        .map_err(|_| "agent is not authorized for evaluate-trade".to_string())?;
 
     let tenant_id = hex::encode(tenant_context::tenant_did());
     let map_name = alloc::format!("z:{tenant_id}:{POLICY_MAP_TAIL}");
@@ -84,7 +77,7 @@ mod tests {
 
     #[test]
     fn contract_version_is_expected_semver() {
-        assert_eq!(CONTRACT_VERSION, "0.1.0");
+        assert_eq!(CONTRACT_VERSION, "0.1.1");
         assert_eq!(CONTRACT_VERSION.split('.').count(), 3);
     }
 

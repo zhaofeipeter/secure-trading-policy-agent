@@ -5,10 +5,12 @@
 
 # Local deployment state (contains the tenant DID)
 client/contract-registration.json
+client/contract-registration-0.1.1.json
 client/agent-authorization.json
 
 # Build and dependency output
 contract/target/
+contract/diagnostic-target-0.1.1/
 client/node_modules/
 
 # Tooling and OS files

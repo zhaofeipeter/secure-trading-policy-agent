@@ -6,18 +6,22 @@
 flowchart TB
     Admin[Tenant/Admin credential<br/>T3N_API_KEY] --> Shared[Shared observed T3N DID]
     Agent[Nominal Agent credential<br/>AGENT_KEY] --> Shared
-    Shared --> R[Register/administer<br/>trading-policy@0.1.0]
+    Shared --> R[Administer registered<br/>trading-policy versions]
     Shared --> M[Provision/administer<br/>trading-policy-config]
     Owner[Data Owner<br/>USER_KEY] --> G[Grant Agent DID<br/>evaluate-trade only]
-    Shared --> I[Invoke evaluate-trade<br/>with data-owner pii_did]
+    Shared --> I[Invoke 0.1.0<br/>with data-owner pii_did]
+    Shared --> I2[Invoke diagnostic 0.1.1<br/>through TenantClient]
     R --> T[T3N]
     M --> T
     G --> T
     I --> T
-    T --> C[Rust TEE contract]
-    C --> A[check-authorized]
-    C --> K[(Private policy KV)]
-    C --> D[Deterministic<br/>ALLOW or DENY]
+    I2 --> T
+    T --> C0[863 / 0.1.0]
+    T --> C1[868 / 0.1.1]
+    C0 --> A[check-authorized<br/>runtime -32603]
+    C0 --> K[(Private policy KV)]
+    C1 --> K
+    C1 --> D[Deterministic<br/>ALLOW or DENY<br/>live 8/8]
 ```
 
 The code separates credentials into different modules and intended processes:
@@ -25,7 +29,8 @@ The code separates credentials into different modules and intended processes:
 - `tenant-admin.ts` reads only `T3N_API_KEY` and constructs `TenantClient`.
 - `data-owner.ts` reads only `USER_KEY` and constructs a plain `T3nClient` for SelfOnly delegation administration.
 - `agent.ts` reads only the nominal `AGENT_KEY` and constructs a plain `T3nClient` for business invocation.
-- `demo.ts` imports only the agent connector; it has no tenant control-plane path.
+- `demo.ts` imports only the agent connector and retains the original 0.1.0 path.
+- `demo-live-0.1.1.ts` is an explicitly labelled diagnostic Tenant/Admin path for the successful 0.1.1 test.
 
 This is an application-architecture separation, not a demonstrated T3N authorization boundary. On 2026-09-02, different tenant/admin and nominal-agent credential values both authenticated as `did:t3n:f62da0c78b9ffd0fce31193d4e7db02f272adc0e`. Using only `AGENT_KEY`, all probed tenant control-plane reads succeeded. No write permission was tested, so the ability to register contracts, change ACLs, rewrite policy, or perform other admin mutations is unknown.
 
@@ -45,41 +50,49 @@ readScopes   = []
 allowedHosts = []
 ```
 
-The live nominal-agent invocation supplies the authorizing data-owner DID as `pii_did`. The contract imports the vendored `host:interfaces/authorisation@2.1.0` interface and calls `check-authorized` before policy access. This remains a valuable policy gate. In the tested environment, however, the next live evaluation is a self/shared-DID authorization test and must not be represented as proof of cross-principal delegation.
+The 0.1.0 nominal-agent invocation supplies the authorizing data-owner DID as `pii_did`. Contract 863 imports the vendored `host:interfaces/authorisation@2.1.0` interface and calls `check-authorized` before policy access. It repeatedly returned `action.execute` `-32603 Internal error` before any result was decoded.
 
-The WIT surface is confirmed locally, but an empty-host authorization check for a KV-only tenant contract has not yet been exercised on testnet. That live compatibility check is explicitly pending.
+Diagnostic contract 868 / 0.1.1 removes only the authorisation import and entry call. Tenant context, KV access, policy logic, response shape, and claims digest remain. Its direct TenantClient live demo passed all eight scenarios. This strongly isolates the tested failure to the authorisation path, but does not prove the platform root cause and does not demonstrate agent/data-owner authorization.
 
-## Contract flow
+## Version comparison
+
+| Property | 863 / 0.1.0 | 868 / 0.1.1 |
+|---|---|---|
+| WIT authorisation import | `host:interfaces/authorisation@2.1.0` | Absent |
+| Entry authorization | `check-authorized([])` | Absent |
+| Tenant context | `host:tenant/tenant-context@1.0.0` | Preserved |
+| Policy KV | `host:interfaces/kv-store@2.1.0` | Preserved |
+| Runtime result | `-32603 Internal error` | 8/8 live scenarios passed |
+| Security meaning | Intended authorization design, not executable in tested runtime | Diagnostic policy workaround, no caller-authorization claim |
+
+## Successful diagnostic flow
 
 ```mermaid
 sequenceDiagram
-    participant Agent as Nominal Agent T3nClient<br/>(shared observed DID)
+    participant Admin as Tenant/Admin client<br/>(shared observed DID)
     participant T3N as T3N runtime
-    participant Auth as Authorisation policy
-    participant Contract as Rust TEE contract
+    participant Contract as 868 / 0.1.1 TEE contract
     participant KV as trading-policy-config
 
-    Agent->>T3N: executeAndDecode(script, evaluate-trade, pii_did, intent)
+    Admin->>T3N: contracts.execute(trading-policy, 0.1.1, intent)
     T3N->>Contract: generic-input + protected execution context
-    Contract->>Auth: check-authorized([])
-    Auth-->>Contract: grant success or typed denial
     Contract->>T3N: tenant-did()
     Contract->>KV: get(current)
     KV-->>Contract: integer-unit policy JSON
     Contract->>Contract: deterministic validation
     Contract->>T3N: set-claims-digest(SHA-256(response))
-    Contract-->>Agent: ALLOW or DENY + ordered reasons
-    Agent->>Agent: parsePolicyDecision(response)
+    Contract-->>Admin: ALLOW or DENY + ordered reasons
+    Admin->>Admin: parsePolicyDecision(response)
 ```
 
 ## Contract modules
 
 - `models.rs`: strict JSON models, integer cents/basis points, and response enums.
 - `policy.rs`: pure deterministic evaluator and native unit tests.
-- `lib.rs`: authorization check, tenant-derived map name, KV read, response serialization, and claims-digest setting.
-- `world.wit`: imports only tenant context, authorization, and KV. There is no HTTP, signing, wallet, exchange, or outbox capability.
+- `lib.rs`: tenant-derived map name, KV read, response serialization, and claims-digest setting. The current 0.1.1 source intentionally omits the 0.1.0 authorization call.
+- `world.wit`: current 0.1.1 imports tenant context and KV only. There is no HTTP, signing, wallet, exchange, or outbox capability.
 
-Malformed trade JSON or invalid unit ranges return `DENY / INVALID_INPUT`. Missing, malformed, or invalid stored policy returns an infrastructure error. Authorization failure returns an error before policy is read. Every path fails closed.
+Malformed trade JSON or invalid unit ranges return `DENY / INVALID_INPUT`. Missing, malformed, or invalid stored policy returns an infrastructure error. Version 0.1.1 does not enforce caller authorization and must remain a diagnostic/workaround version.
 
 ## Integer determinism
 
@@ -101,12 +114,12 @@ Desired final configuration:
 | Property | Value |
 |---|---|
 | Visibility | `private` |
-| Readers | current registered contract ID only |
+| Readers | readers-only update requested contract IDs 863 and 868 |
 | Writers | empty contract set |
 | Admin readable | `true` |
 | Policy key | `current` |
 
-SDK 5.5.0 exposes lifecycle status and idempotent updates but no typed full-map metadata read in `TenantMapsNamespace`. Setup therefore converges by reapplying all desired properties rather than claiming it independently introspected each stored property.
+SDK 5.5.0 exposes lifecycle status and patch-only updates but no ACL metadata read in `TenantMapsNamespace`. The readers-only `[863, 868]` patch was accepted with response `{}`, but the effective ACL could not be independently read back. No visibility, writers, admin-readable, validator, grants, or policy value field was sent in that diagnostic update.
 
 ## Audit wording
 

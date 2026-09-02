@@ -1,6 +1,6 @@
 # T3N Secure Trading Policy Agent
 
-A proof-of-concept deterministic TEE authorization layer between an AI trading agent and execution infrastructure. A nominal agent credential proposes a trade; a Rust contract hosted by T3N reads tenant-owned policy and returns `ALLOW` or `DENY`. This repository never submits a trade, holds no exchange or wallet execution credentials, and uses no funds.
+A proof-of-concept deterministic TEE policy layer between an AI trading agent and execution infrastructure. A Rust contract hosted by T3N reads tenant-owned policy and returns `ALLOW` or `DENY`. This repository never submits a trade, holds no exchange or wallet execution credentials, and uses no funds.
 
 ## Why this exists
 
@@ -13,16 +13,18 @@ flowchart LR
     Shared -->|tenant administration path| T[T3N testnet]
     Shared -->|nominal agent invocation path| T
     Shared -->|provision/administer| KV[(Private policy map<br/>trading-policy-config)]
-    User[Data Owner<br/>USER_KEY] -->|grant evaluate-trade only| Auth[Authorisation policy]
-    T --> C[Rust TEE contract<br/>trading-policy]
-    Auth -->|check-authorized| C
-    KV -->|contract-only read| C
-    C -->|ALLOW or DENY| Agent
-    C -->|set transaction claims digest| T
-    Agent -. no execution adapter .-> X[No real trade]
+    User[Data Owner<br/>USER_KEY] -->|0.1.0 grant| Auth[Authorisation policy]
+    T --> Original[863 / 0.1.0<br/>check-authorized<br/>runtime -32603]
+    Auth --> Original
+    T --> Diagnostic[868 / 0.1.1<br/>diagnostic workaround<br/>live 8/8]
+    KV --> Original
+    KV --> Diagnostic
+    Diagnostic -->|ALLOW or DENY| Admin
+    Diagnostic -->|set transaction claims digest| T
+    Admin -. no execution adapter .-> X[No real trade]
 ```
 
-The LLM proposes. The TEE contract enforces deterministic policy. The admin and nominal-agent code paths use different credential values and modules, but no T3N authorization boundary between those credentials was observed.
+The LLM proposes. The TEE contract enforces deterministic policy. The admin and nominal-agent code paths use different credential values and modules, but no T3N authorization boundary between those credentials was observed. The successful live result is from diagnostic version 0.1.1, which intentionally omits `check-authorized`; it demonstrates TEE policy execution, not independent agent/data-owner authorization.
 
 ## Integer policy units
 
@@ -69,10 +71,10 @@ This demo used the public/self-authenticating onboarding flow for an individual 
 1. Obtain a separately issued credited agent key from the T3N claim page.
 2. In an agent-only shell, use the SDK CLI with `--api-key $env:AGENT_KEY` to run `whoami`, scaffold/host the public agent card, and verify it.
 3. Copy the session-returned DID into `AGENT_DID` in the separate data-owner authorization shell.
-4. After the contract is registered, run `npm run authorize` with `USER_KEY` and `AGENT_DID`. The SDK helper implementing the documented `agent-auth-update` flow performs a read/merge/write for only `trading-policy@0.1.0::evaluate-trade`, with empty data scopes and no outbound hosts, while preserving unrelated grants.
-5. `npm run demo:live` uses only `AGENT_KEY`; it reads non-secret local authorization metadata to supply the data-owner DID as `pii_did`.
+4. The recorded 0.1.0 flow used `npm run authorize` with `USER_KEY` and `AGENT_DID`. The SDK helper implementing the documented `agent-auth-update` flow performs a read/merge/write for only `trading-policy@0.1.0::evaluate-trade`, with empty data scopes and no outbound hosts, while preserving unrelated grants.
+5. `npm run demo:live` targets 0.1.0 using only `AGENT_KEY`; that registered contract repeatedly failed at runtime with `action.execute` error `-32603`.
 
-`USER_KEY` is required for the authorization bootstrap because the grant is a SelfOnly data-owner write. It is not required or read by the nominal-agent execution module. In this environment, the next live authorization test is a self/shared-DID flow and must not be described as proof of cross-principal delegation.
+`USER_KEY` is required for the 0.1.0 authorization bootstrap because the grant is a SelfOnly data-owner write. It is not required or read by the nominal-agent execution module. Any future retry of that authorization design in this environment is a self/shared-DID flow and must not be described as proof of cross-principal delegation.
 
 ## Tenant policy storage
 
@@ -80,7 +82,7 @@ This demo used the public/self-authenticating onboarding flow for an individual 
 - Policy map: `z:<tenant-id>:trading-policy-config`
 - Entry key: `current`
 
-The contract constructs the map name from the host-provided tenant DID. Setup converges the map on every run to private visibility, current contract-ID read access, no business-contract writers, and tenant-admin read-back. It then refuses to overwrite a different policy and verifies the intended value.
+The contract constructs the map name from the host-provided tenant DID. The original setup created the private map for contract 863 and verified its policy value. A later readers-only patch requesting `[863, 868]` was accepted with SDK response `{}` so diagnostic version 0.1.1 could read the same policy. SDK 5.5.0 exposes no ACL readback API, so the final reader list was not independently retrieved; no other map setting or policy value was included in that patch.
 
 ## Prerequisites and install
 
@@ -114,32 +116,26 @@ npm run demo
 
 Bare `cargo test --lib` inherits the repository's WASM default target, which Windows cannot execute directly. Always select the native MSVC target as shown.
 
-## Current live testnet state and next test
+## Live testnet result
 
-Contract `trading-policy@0.1.0` is already registered as contract ID 863, and policy map `trading-policy-config` exists. Do not rerun registration.
+Two immutable versions are recorded under the same contract tail:
 
-After approval, the next live step is the self/shared-DID authorization test:
+| Version | Contract ID | Authorisation host path | Observed result |
+|---|---:|---|---|
+| `0.1.0` | 863 | Imports `host:interfaces/authorisation@2.1.0`; calls `check-authorized` at entry | Repeated `action.execute` `-32603 Internal error` |
+| `0.1.1` | 868 | Diagnostic workaround removes only that import/call | Live T3N testnet TEE demo passed 8/8 scenarios |
 
-```powershell
-$env:USER_KEY = "<data-owner-key>"
-$env:AGENT_DID = "<session-derived-agent-did>"
-npm run authorize
-```
+The evidence strongly isolates the failure to the `host:interfaces/authorisation@2.1.0` / `check-authorized` path in the tested T3N testnet environment. Local WIT accepts it and 0.1.0 registered successfully, but runtime execution failed; removing that dependency made the otherwise equivalent contract execute successfully. This appears to be a host-surface/runtime compatibility discrepancy, not mathematical proof of causation or a confirmed T3N security vulnerability.
 
-Nominal-agent credential shell:
-
-```powershell
-$env:AGENT_KEY = "<nominal-agent-key>"
-npm run demo:live
-```
-
-Registration remains fixed at tail `trading-policy`, version `0.1.0`. It refuses an existing local record and checks live tenant inventory before registering. No automatic version bump exists.
+Do not re-register either version or rerun setup. The successful 0.1.1 demo contacted no exchange and executed no trade.
 
 ## Demo modes
 
 `npm run demo` runs eight fixtures through a trusted local harness. It is useful for deterministic output review but is not evidence of T3N execution.
 
-`npm run demo:live` authenticates using only the nominal `AGENT_KEY`, validates that its session DID matches the authorization metadata, calls the contract through `T3nClient.executeAndDecode`, and runtime-validates every returned field and reason code. It does not construct `TenantClient`. Because the tested `AGENT_KEY` shares the tenant DID, success would validate a self/shared-DID authorization flow, not cross-principal delegation.
+`npm run demo:live` retains the original 0.1.0 nominal-agent path for reproducing the `-32603` result. It uses `AGENT_KEY`, validates the session DID, calls `T3nClient.executeAndDecode`, and runtime-validates decoded decisions if one is returned.
+
+`npm run demo:live:0.1.1` uses `T3N_API_KEY` and `TenantClient.contracts.execute` against registered contract 868. The recorded run returned every expected result: two `ALLOW` decisions and six `DENY` decisions, including all six ordered reasons for the multi-violation case. This is the successful 8/8 T3N TEE policy demo. Because 0.1.1 omits `check-authorized`, it does not demonstrate a separate agent principal, cross-principal delegation, or successful authorisation-host enforcement.
 
 ## Audit statement
 
@@ -153,6 +149,6 @@ This disables server attestation verification and is not production-safe. Produc
 
 ## Security limitations and production path
 
-The tested tenant/admin and nominal-agent credentials share one observed T3N DID, and the nominal-agent credential successfully performed tenant control-plane reads. Write/admin mutation authority was not tested and is unknown. The caller also supplies `dailyLossUsdCents` and `confidenceBps`; the contract validates their ranges and thresholds but cannot prove their provenance. Production must clarify T3N credential/onboarding semantics, derive risk state from trusted protected sources, restore verified TrustAnchor handling, isolate wallet custody, add replay controls and independent receipt verification, and undergo independent security review.
+The tested tenant/admin and nominal-agent credentials share one observed T3N DID, and the nominal-agent credential successfully performed tenant control-plane reads. Write/admin mutation authority was not tested and is unknown. Diagnostic 0.1.1 has no `check-authorized` gate. The caller also supplies `dailyLossUsdCents` and `confidenceBps`; the contract validates their ranges and thresholds but cannot prove their provenance. Production must resolve the authorisation-host compatibility discrepancy, restore and verify caller authorization, clarify T3N credential/onboarding semantics, derive risk state from trusted protected sources, restore verified TrustAnchor handling, isolate wallet custody, add replay controls and independent receipt verification, and undergo independent security review.
 
 No current code is authorized to control real funds.

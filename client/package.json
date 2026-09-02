@@ -11,7 +11,14 @@
     "authorize": "tsx src/authorize-agent.ts",
     "demo": "tsx src/demo.ts",
     "demo:live": "tsx src/demo.ts --live",
-    "probe:agent-privileges": "tsx src/probe-agent-privileges.ts"
+    "probe:agent-privileges": "tsx src/probe-agent-privileges.ts",
+    "diagnose:execute-shape": "tsx src/diagnose-execute-shape.ts",
+    "diagnose:tenant-execute": "tsx src/diagnose-tenant-execute.ts",
+    "diagnose:contract-logs": "tsx src/diagnose-contract-logs.ts",
+    "register:0.1.1": "tsx src/register-contract-0.1.1.ts",
+    "grant:reader:0.1.1": "tsx src/grant-diagnostic-reader-0.1.1.ts",
+    "diagnose:tenant-execute:0.1.1": "tsx src/diagnose-tenant-execute-0.1.1.ts",
+    "demo:live:0.1.1": "tsx src/demo-live-0.1.1.ts"
   },
   "dependencies": {
     "@terminal3/t3n-sdk": "5.5.0"

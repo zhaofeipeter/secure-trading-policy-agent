@@ -1,6 +1,6 @@
 [package]
 name = "secure-trading-policy-agent-contract"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Deterministic T3N TEE authorization policy for proposed trades"
 license = "MIT"

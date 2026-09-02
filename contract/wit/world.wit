@@ -2,11 +2,10 @@
 ///
 /// The host supplies the tenant identity and durable tenant-scoped KV store.
 /// This component has no HTTP, wallet, exchange, or trading capability.
-package z:trading-policy@0.1.0;
+package z:trading-policy@0.1.1;
 
 world trading-policy {
     import host:tenant/tenant-context@1.0.0;
-    import host:interfaces/authorisation@2.1.0;
     import host:interfaces/kv-store@2.1.0;
 
     export contracts;

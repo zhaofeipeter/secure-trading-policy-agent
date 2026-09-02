@@ -34,4 +34,36 @@ Separately, SDK 5.5.0 exposes `fetchTrustedManifest()`; the requirement to make 
 
 ## Integration status
 
-SDK 5.5.0 type declarations confirm the client surfaces used for tenant map lifecycle, entry set/get, contract registration, agent sessions, the SDK helper implementing the documented `agent-auth-update` flow, and contract execution. `BUILD_LOG.md` records the current live state and distinguishes it from the 2026-09-02 read-only probe. Contract `trading-policy@0.1.0` is registered as ID `863`; the probe itself performed no registration, grant, policy mutation, or live contract invocation.
+SDK 5.5.0 type declarations confirm the client surfaces used for tenant map lifecycle, entry set/get, contract registration, agent sessions, the SDK helper implementing the documented `agent-auth-update` flow, and contract execution. SDK 5.5.0 does not expose an ACL readback API for map reader/writer configuration. The readers-only request `[863, 868]` was accepted with response `{}`, but its effective state could not be independently retrieved through the SDK.
+
+## FINDING-004 — Authorisation host path fails while an otherwise equivalent contract executes
+
+- **Environment:** T3N testnet on Windows 11; client SDK `@terminal3/t3n-sdk@5.5.0`; Rust `wasm32-wasip2` components registered under tail `trading-policy`.
+- **Original:** Contract 863 / `0.1.0` imports `host:interfaces/authorisation@2.1.0` and calls `check-authorized([])` at function entry. It also imports tenant context and KV as shown below.
+- **Observed 0.1.0 behavior:** Registration and policy-map setup succeeded, but both `T3nClient.executeAndDecode` payload forms and `TenantClient.contracts.execute("trading-policy", ...)` repeatedly returned `action.execute` `-32603 Internal error`. Recorded request IDs include `845e1326-2722-4f8c-86c8-eecb2664c833`, `2b1da316-fd54-48bb-9cd7-c36c9f5ccd78`, and `8d1de50a-650c-4715-90dc-9cece37915a0`.
+- **Diagnostic:** Contract 868 / `0.1.1` changes only the contract version and removes the authorisation WIT import and `check-authorized` entry call. Tenant context, `kv-store.get`, `kv-store.set-claims-digest`, request/response types, map/key, and policy logic are preserved.
+- **Observed 0.1.1 behavior:** After an accepted readers-only map patch requesting `[863, 868]`, direct tenant execution succeeded. The full T3N testnet TEE demo passed all 8 deterministic scenarios, including both ALLOW fixtures and the ordered six-reason DENY fixture. No exchange was contacted and no trade was executed.
+
+| WASM host import | 863 / 0.1.0 | 868 / 0.1.1 | Difference |
+|---|---|---|---|
+| `host:interfaces/authorisation@2.1.0` | Present; `check-authorized` called first | Absent | Only removed host dependency |
+| `host:tenant/tenant-context@1.0.0` | Present | Present | None |
+| `host:interfaces/kv-store@2.1.0` | Present; `get` and `set-claims-digest` used | Present; same calls used | None |
+
+### Reproduction
+
+1. Build and register the 0.1.0 component with the three imports above as contract 863.
+2. Provision `trading-policy-config/current` for contract read access and invoke `evaluate-trade` with the repository's known-good SOL fixture.
+3. Observe `action.execute` error `-32603`; the request IDs above are examples from repeated attempts.
+4. Build 0.1.1 from the same source with only `host:interfaces/authorisation@2.1.0` and `check-authorized([])` removed, and register it separately as contract 868.
+5. Add 868 to the map reader request without changing policy data, then invoke the same SOL fixture through `TenantClient.contracts.execute`.
+6. Run the same eight fixtures through `npm run demo:live:0.1.1`; the recorded run passed 8/8.
+
+- **Expected:** A locally valid, successfully registered contract using the supplied authorisation WIT surface either executes `check-authorized` and returns its typed result, or returns a specific compatibility/authorization error.
+- **Actual:** The authorisation-bearing 0.1.0 returns only `-32603 Internal error`; removing that single dependency allows the otherwise equivalent 0.1.1 to execute successfully.
+- **Assessment:** The evidence strongly isolates the failure to the `host:interfaces/authorisation@2.1.0` / `check-authorized` path in the tested T3N testnet environment. This appears to be a host-surface/runtime compatibility discrepancy requiring Terminal 3 clarification. Local compilation and successful registration do not establish runtime host support.
+- **Claim boundary:** This is not labelled a confirmed T3N security vulnerability and is not mathematical proof of root cause. Diagnostic 0.1.1 omits caller authorization, so its success does not demonstrate a separate agent/data-owner authorization boundary or successful `check-authorized` enforcement.
+
+## Final integration status
+
+The immutable live evidence is contract 863 / 0.1.0 for the intended authorization design and contract 868 / 0.1.1 for the diagnostic workaround. Do not overwrite or represent them as the same security design. `BUILD_LOG.md` records both the failures and the successful 8/8 run.
