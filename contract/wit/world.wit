@@ -6,6 +6,7 @@ package z:trading-policy@0.1.0;
 
 world trading-policy {
     import host:tenant/tenant-context@1.0.0;
+    import host:interfaces/authorisation@2.1.0;
     import host:interfaces/kv-store@2.1.0;
 
     export contracts;
@@ -20,7 +21,7 @@ interface contracts {
     }
 
     /// Evaluate a proposed trade against policy stored at
-    /// z:<authenticated-tenant>:trading-policy/current.
+    /// z:<authenticated-tenant>:trading-policy-config/current.
     /// This function authorizes or denies; it never executes a trade.
     evaluate-trade: func(req: generic-input) -> result<list<u8>, string>;
 }

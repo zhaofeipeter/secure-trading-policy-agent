@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit",
     "register": "tsx src/register-contract.ts",
     "setup": "tsx src/setup.ts",
+    "authorize": "tsx src/authorize-agent.ts",
     "demo": "tsx src/demo.ts",
     "demo:live": "tsx src/demo.ts --live"
   },

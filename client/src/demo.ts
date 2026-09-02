@@ -1,9 +1,11 @@
-import { connectT3n } from "./t3n.js";
+import { connectAgent } from "./agent.js";
+import { readAgentAuthorization } from "./authorization.js";
+import { parsePolicyDecision } from "./policy-decision.js";
 import { readRegistration } from "./registration.js";
 import {
-  CONTRACT_TAIL,
   CONTRACT_VERSION,
   DEFAULT_POLICY,
+  EVALUATE_TRADE_FUNCTION,
   type PolicyDecision,
   type ReasonCode,
   type TradeIntent,
@@ -20,49 +22,49 @@ interface Scenario {
 const scenarios: Scenario[] = [
   {
     name: "valid SOL buy",
-    intent: { symbol: "SOL", side: "BUY", notionalUsd: 500, venue: "JUPITER", confidence: 0.91, dailyLossUsd: 100 },
+    intent: { symbol: "SOL", side: "BUY", notionalUsdCents: 50_000, venue: "JUPITER", confidenceBps: 9_100, dailyLossUsdCents: 10_000 },
     expectedDecision: "ALLOW",
     expectedReasons: [],
   },
   {
     name: "valid BTC sell",
-    intent: { symbol: "BTC", side: "SELL", notionalUsd: 700, venue: "JUPITER", confidence: 0.88, dailyLossUsd: 200 },
+    intent: { symbol: "BTC", side: "SELL", notionalUsdCents: 70_000, venue: "JUPITER", confidenceBps: 8_800, dailyLossUsdCents: 20_000 },
     expectedDecision: "ALLOW",
     expectedReasons: [],
   },
   {
     name: "unsupported token",
-    intent: { symbol: "DOGE", side: "BUY", notionalUsd: 100, venue: "JUPITER", confidence: 0.95, dailyLossUsd: 0 },
+    intent: { symbol: "DOGE", side: "BUY", notionalUsdCents: 10_000, venue: "JUPITER", confidenceBps: 9_500, dailyLossUsdCents: 0 },
     expectedDecision: "DENY",
     expectedReasons: ["SYMBOL_NOT_ALLOWED"],
   },
   {
     name: "unsupported venue",
-    intent: { symbol: "SOL", side: "BUY", notionalUsd: 100, venue: "BINANCE", confidence: 0.95, dailyLossUsd: 0 },
+    intent: { symbol: "SOL", side: "BUY", notionalUsdCents: 10_000, venue: "BINANCE", confidenceBps: 9_500, dailyLossUsdCents: 0 },
     expectedDecision: "DENY",
     expectedReasons: ["VENUE_NOT_ALLOWED"],
   },
   {
     name: "oversized SOL trade",
-    intent: { symbol: "SOL", side: "BUY", notionalUsd: 1_500, venue: "JUPITER", confidence: 0.95, dailyLossUsd: 0 },
+    intent: { symbol: "SOL", side: "BUY", notionalUsdCents: 150_000, venue: "JUPITER", confidenceBps: 9_500, dailyLossUsdCents: 0 },
     expectedDecision: "DENY",
     expectedReasons: ["NOTIONAL_LIMIT_EXCEEDED"],
   },
   {
     name: "low-confidence trade",
-    intent: { symbol: "SOL", side: "SELL", notionalUsd: 200, venue: "JUPITER", confidence: 0.5, dailyLossUsd: 0 },
+    intent: { symbol: "SOL", side: "SELL", notionalUsdCents: 20_000, venue: "JUPITER", confidenceBps: 5_000, dailyLossUsdCents: 0 },
     expectedDecision: "DENY",
     expectedReasons: ["CONFIDENCE_TOO_LOW"],
   },
   {
     name: "daily loss exceeded",
-    intent: { symbol: "BTC", side: "SELL", notionalUsd: 200, venue: "JUPITER", confidence: 0.9, dailyLossUsd: 501 },
+    intent: { symbol: "BTC", side: "SELL", notionalUsdCents: 20_000, venue: "JUPITER", confidenceBps: 9_000, dailyLossUsdCents: 50_100 },
     expectedDecision: "DENY",
     expectedReasons: ["DAILY_LOSS_LIMIT_EXCEEDED"],
   },
   {
     name: "multiple simultaneous violations",
-    intent: { symbol: "DOGE", side: "HOLD", notionalUsd: 2_000, venue: "BINANCE", confidence: 0.2, dailyLossUsd: 900 },
+    intent: { symbol: "DOGE", side: "HOLD", notionalUsdCents: 200_000, venue: "BINANCE", confidenceBps: 2_000, dailyLossUsdCents: 90_000 },
     expectedDecision: "DENY",
     expectedReasons: [
       "SYMBOL_NOT_ALLOWED",
@@ -79,28 +81,36 @@ function evaluateInTrustedLocalHarness(
   intent: TradeIntent,
   policy: TradingPolicy,
 ): PolicyDecision {
-  const numbersValid =
-    Number.isFinite(intent.notionalUsd) && intent.notionalUsd >= 0 &&
-    Number.isFinite(intent.dailyLossUsd) && intent.dailyLossUsd >= 0 &&
-    Number.isFinite(intent.confidence) && intent.confidence >= 0 && intent.confidence <= 1;
-  if (!numbersValid) {
-    return { decision: "DENY", reasons: ["INVALID_INPUT"], symbol: intent.symbol, side: intent.side, notionalUsd: intent.notionalUsd };
+  const unitsValid =
+    Number.isSafeInteger(intent.notionalUsdCents) && intent.notionalUsdCents >= 0 &&
+    Number.isSafeInteger(intent.dailyLossUsdCents) && intent.dailyLossUsdCents >= 0 &&
+    Number.isSafeInteger(intent.confidenceBps) &&
+    intent.confidenceBps >= 0 &&
+    intent.confidenceBps <= 10_000;
+  if (!unitsValid) {
+    return parsePolicyDecision({
+      decision: "DENY",
+      reasons: ["INVALID_INPUT"],
+      symbol: intent.symbol,
+      side: intent.side,
+      notionalUsdCents: intent.notionalUsdCents,
+    });
   }
 
   const reasons: ReasonCode[] = [];
   if (!policy.allowedSymbols.includes(intent.symbol)) reasons.push("SYMBOL_NOT_ALLOWED");
   if (!policy.allowedVenues.includes(intent.venue)) reasons.push("VENUE_NOT_ALLOWED");
-  if (intent.notionalUsd > policy.maxTradeNotionalUsd) reasons.push("NOTIONAL_LIMIT_EXCEEDED");
-  if (intent.dailyLossUsd > policy.maxDailyLossUsd) reasons.push("DAILY_LOSS_LIMIT_EXCEEDED");
-  if (intent.confidence < policy.minConfidence) reasons.push("CONFIDENCE_TOO_LOW");
+  if (intent.notionalUsdCents > policy.maxTradeNotionalUsdCents) reasons.push("NOTIONAL_LIMIT_EXCEEDED");
+  if (intent.dailyLossUsdCents > policy.maxDailyLossUsdCents) reasons.push("DAILY_LOSS_LIMIT_EXCEEDED");
+  if (intent.confidenceBps < policy.minConfidenceBps) reasons.push("CONFIDENCE_TOO_LOW");
   if (intent.side !== "BUY" && intent.side !== "SELL") reasons.push("INVALID_SIDE");
-  return {
+  return parsePolicyDecision({
     decision: reasons.length === 0 ? "ALLOW" : "DENY",
     reasons,
     symbol: intent.symbol,
     side: intent.side,
-    notionalUsd: intent.notionalUsd,
-  };
+    notionalUsdCents: intent.notionalUsdCents,
+  });
 }
 
 function assertExpected(scenario: Scenario, actual: PolicyDecision): void {
@@ -120,18 +130,30 @@ async function createEvaluator(): Promise<(intent: TradeIntent) => Promise<Polic
   }
 
   const registration = await readRegistration();
-  const { tenant, tenantDid } = await connectT3n();
-  if (tenantDid !== registration.tenantDid) {
-    throw new Error("Authenticated tenant does not match the contract registration record");
+  const authorization = await readAgentAuthorization();
+  if (
+    authorization.scriptName !== registration.scriptName ||
+    authorization.version !== registration.version
+  ) {
+    throw new Error("Agent authorization does not match the registered contract");
+  }
+  const { agentClient, agentDid } = await connectAgent();
+  if (agentDid !== authorization.agentDid) {
+    throw new Error("Authenticated agent does not match the authorized agent DID");
   }
   console.log(`Mode: LIVE T3N TESTNET TEE (${registration.scriptName}@${registration.version})`);
+  console.log(`Agent DID: ${agentDid}`);
   console.log("Security note: testnet uses the documented unsafe trust-server workaround.\n");
-  return async (intent) =>
-    (await tenant.contracts.execute(CONTRACT_TAIL, {
-      version: CONTRACT_VERSION,
-      functionName: "evaluate-trade",
+  return async (intent) => {
+    const response: unknown = await agentClient.executeAndDecode({
+      contract_id: registration.scriptName,
+      contract_version: CONTRACT_VERSION,
+      function_name: EVALUATE_TRADE_FUNCTION,
+      pii_did: authorization.dataOwnerDid,
       input: intent,
-    })) as PolicyDecision;
+    });
+    return parsePolicyDecision(response);
+  };
 }
 
 const evaluateIntent = await createEvaluator();

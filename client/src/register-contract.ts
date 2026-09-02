@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
-import { connectT3n } from "./t3n.js";
+import { connectTenantAdmin } from "./tenant-admin.js";
 import { REGISTRATION_PATH } from "./registration.js";
 import {
   CONTRACT_TAIL,
@@ -28,7 +28,7 @@ if (!existsSync(WASM_PATH)) {
   throw new Error(`WASM artifact not found at ${WASM_PATH}. Build the Rust contract first.`);
 }
 
-const { tenant, tenantDid } = await connectT3n();
+const { tenant, tenantDid } = await connectTenantAdmin();
 const canonicalName = tenant.canonicalName(CONTRACT_TAIL);
 const inventory = await tenant.contracts.listDetailed({ limit: 200 });
 const existing = inventory.contracts.find((item) => item.name === canonicalName);

@@ -1,69 +1,111 @@
 # Architecture
 
-## Security boundary
+## Principals and responsibilities
 
-The upstream AI is a proposal generator, not an authority. Its only input to the protected path is a `TradeIntent`. It cannot supply policy, choose another tenant namespace, call an exchange, or override the decision algorithm.
+```mermaid
+flowchart TB
+    Admin[Tenant Admin<br/>T3N_API_KEY] --> R[Register trading-policy@0.1.0]
+    Admin --> M[Provision/administer<br/>trading-policy-config]
+    Owner[Data Owner<br/>USER_KEY] --> G[Grant Agent DID<br/>evaluate-trade only]
+    Agent[Agent DID<br/>AGENT_KEY only] --> I[Invoke evaluate-trade<br/>with data-owner pii_did]
+    R --> T[T3N]
+    M --> T
+    G --> T
+    I --> T
+    T --> C[Rust TEE contract]
+    C --> A[check-authorized]
+    C --> K[(Private policy KV)]
+    C --> D[Deterministic<br/>ALLOW or DENY]
+```
+
+The tenant administrator, data owner, and agent are distinct security principals. Their credentials are consumed by different modules and intended to run in separate processes:
+
+- `tenant-admin.ts` reads only `T3N_API_KEY` and constructs `TenantClient`.
+- `data-owner.ts` reads only `USER_KEY` and constructs a plain `T3nClient` for SelfOnly delegation administration.
+- `agent.ts` reads only `AGENT_KEY` and constructs a plain `T3nClient` for business invocation.
+- `demo.ts` imports only the agent connector; it has no tenant control-plane path.
+
+A prompt-injected agent does not possess `T3N_API_KEY` or `USER_KEY`, so it cannot register contracts, change map ACLs, rewrite policy, or expand its own authorization grant through these application paths.
+
+## Agent onboarding and authorization
+
+The project uses the documented public/self-authenticating agent flow. A fresh credited claim-page key authenticates as its own T3N session and produces a session-returned agent DID. Public agent-card creation/hosting is a manual CLI onboarding step.
+
+The data owner uses the SDK 5.5.0 `updateAgentAuth` read/merge/write helper for the publicly documented `agent-auth-update` flow. It preserves unrelated agent/contract rows and writes this grant:
+
+```text
+agentDid     = <session-derived agent DID>
+scriptName   = z:<tenant-id>:trading-policy
+versionReq   = 0.1.0
+functions    = [evaluate-trade]
+scopes       = []
+readScopes   = []
+allowedHosts = []
+```
+
+The live agent invocation supplies the authorizing data-owner DID as `pii_did`. The contract imports the vendored `host:interfaces/authorisation@2.1.0` interface and calls `check-authorized` before policy access. A missing, revoked, wrong-contract, wrong-version, or wrong-function grant therefore fails closed.
+
+The WIT surface is confirmed locally, but an empty-host authorization check for a KV-only tenant contract has not yet been exercised on testnet. That live compatibility check is explicitly pending.
+
+## Contract flow
 
 ```mermaid
 sequenceDiagram
-    participant AI as Untrusted AI agent
-    participant Client as TypeScript client
-    participant T3N as T3N session/ledger
+    participant Agent as Agent T3nClient
+    participant T3N as T3N runtime
+    participant Auth as Authorisation policy
     participant Contract as Rust TEE contract
-    participant KV as z:tenant:trading-policy
+    participant KV as trading-policy-config
 
-    AI->>Client: TradeIntent
-    Client->>T3N: authenticated evaluate-trade invocation
-    T3N->>Contract: generic-input JSON bytes + trusted tenant context
+    Agent->>T3N: executeAndDecode(script, evaluate-trade, pii_did, intent)
+    T3N->>Contract: generic-input + protected execution context
+    Contract->>Auth: check-authorized([])
+    Auth-->>Contract: grant success or typed denial
     Contract->>T3N: tenant-did()
     Contract->>KV: get(current)
-    KV-->>Contract: tenant-owned policy bytes
+    KV-->>Contract: integer-unit policy JSON
     Contract->>Contract: deterministic validation
     Contract->>T3N: set-claims-digest(SHA-256(response))
-    Contract-->>Client: ALLOW or DENY + ordered reasons
-    Note over Client: No execution adapter exists
+    Contract-->>Agent: ALLOW or DENY + ordered reasons
+    Agent->>Agent: parsePolicyDecision(response)
 ```
 
-## Components
+## Contract modules
 
-### Rust contract
+- `models.rs`: strict JSON models, integer cents/basis points, and response enums.
+- `policy.rs`: pure deterministic evaluator and native unit tests.
+- `lib.rs`: authorization check, tenant-derived map name, KV read, response serialization, and claims-digest setting.
+- `world.wit`: imports only tenant context, authorization, and KV. There is no HTTP, signing, wallet, exchange, or outbox capability.
 
-- `models.rs` defines strict JSON models and machine-readable enums.
-- `policy.rs` contains the pure deterministic evaluator used by native tests.
-- `lib.rs` implements the WIT export, derives the map name from trusted `tenant-context`, reads policy through `kv-store`, serializes the decision, and commits its digest.
-- `world.wit` imports only `tenant-context` and `kv-store`. Absence of HTTP, signing, outbox, and exchange interfaces is intentional.
+Malformed trade JSON or invalid unit ranges return `DENY / INVALID_INPUT`. Missing, malformed, or invalid stored policy returns an infrastructure error. Authorization failure returns an error before policy is read. Every path fails closed.
 
-The function returns an infrastructure error when policy is missing, malformed, or invalid. It returns `DENY / INVALID_INPUT` for malformed or structurally invalid trade intent. This separates an unavailable security control from an ordinary rejected proposal while failing closed in both cases.
+## Integer determinism
 
-### TypeScript client
+Money uses `u64` cents and confidence uses `u16` basis points constrained to `0..=10000`. Validation order is symbol, venue, notional, daily loss, confidence, then side. Exact boundaries are inclusive. No floating point, clock, randomness, network, market data, or LLM participates in evaluation.
 
-- `t3n.ts` owns testnet selection, API-key presence validation, SDK WASM loading, handshake, authentication, session-derived tenant DID, and `TenantClient` construction.
-- `register-contract.ts` registers one fixed tail/version and writes guarded local metadata.
-- `setup.ts` provisions and verifies private tenant policy storage.
-- `demo.ts` runs eight fixtures either through an explicitly labeled local harness or the live T3N contract.
+`dailyLossUsdCents` remains agent-supplied. It is range-checked but not trusted accounting data; production must source it from protected ledger/accounting state.
 
-### Tenant policy storage
+## Policy storage and convergence
 
-The confirmed SDK 5.5.0 surface supplies `maps.create`, `entrySet`, `entryGet`, and `getStatus`. The confirmed WIT surface supplies `kv-store.get`. The resulting map is canonicalized by the SDK as `z:<tenant-id>:trading-policy` and the contract independently reconstructs the same name from the raw 20-byte tenant DID supplied by the host.
+| Resource | Canonical name |
+|---|---|
+| Contract | `z:<tenant-id>:trading-policy` |
+| Policy map | `z:<tenant-id>:trading-policy-config` |
 
-Map configuration:
+The setup process checks map lifecycle, creates it only if absent, and then unconditionally applies the desired update using SDK-confirmed `maps.update`. This recovers from a prior run that created the map but failed before ACL/admin configuration.
 
-| Property | Value | Purpose |
-|---|---|---|
-| Visibility | `private` | Avoid public policy reads |
-| Readers | registered contract ID only | Contract can enforce policy |
-| Writers | empty contract set | Business contract cannot rewrite policy |
-| Admin readable | `true` | Tenant administrator can verify bootstrap state |
-| Entry key | `current` | Stable policy lookup |
+Desired final configuration:
 
-The management-plane tenant administrator initializes policy. The demo does not implement general policy mutation.
+| Property | Value |
+|---|---|
+| Visibility | `private` |
+| Readers | current registered contract ID only |
+| Writers | empty contract set |
+| Admin readable | `true` |
+| Policy key | `current` |
 
-## Determinism
+SDK 5.5.0 exposes lifecycle status and idempotent updates but no typed full-map metadata read in `TenantMapsNamespace`. Setup therefore converges by reapplying all desired properties rather than claiming it independently introspected each stored property.
 
-Validation has a stable order: symbol, venue, notional, daily loss, confidence, then side. Exact boundary values are allowed. Strings are exact and case-sensitive. No clock, randomness, network, market data, or LLM is consulted.
+## Audit wording
 
-The `dailyLossUsd` value is supplied in the intent for the scope of this bounty. In a production design it must come from trusted accounting state inside the protected boundary; accepting an agent-authored loss figure is a documented limitation.
-
-## Auditability
-
-Every live invocation is a T3N contract transaction. The contract hashes the exact serialized response with SHA-256 and calls the confirmed `set-claims-digest` host API. A verifier with the transaction receipt can correlate the returned decision bytes to the ledger claim. This demo does not yet provide an append-only decision-query UI or receipt verification CLI.
+The contract sets a SHA-256 transaction claims digest over the exact serialized decision. The project has not retrieved and independently verified a receipt. Receipt retrieval and verification remain future work; no stronger audit claim is made.

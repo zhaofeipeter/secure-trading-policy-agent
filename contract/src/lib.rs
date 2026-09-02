@@ -16,7 +16,7 @@ use alloc::{string::String, vec::Vec};
 use models::Policy;
 
 pub const CONTRACT_VERSION: &str = "0.1.0";
-pub const POLICY_MAP_TAIL: &str = "trading-policy";
+pub const POLICY_MAP_TAIL: &str = "trading-policy-config";
 pub const POLICY_KEY: &[u8] = b"current";
 
 wit_bindgen::generate!({
@@ -42,8 +42,15 @@ impl exports::z::trading_policy::contracts::Guest for Component {
 
 #[cfg(target_arch = "wasm32")]
 fn evaluate_trade_wasm(input: Option<&[u8]>) -> Result<Vec<u8>, String> {
-    use crate::host::{interfaces::kv_store, tenant::tenant_context};
+    use crate::host::{
+        interfaces::{authorisation, kv_store},
+        tenant::tenant_context,
+    };
     use sha2::{Digest, Sha256};
+
+    let no_egress_hosts: Vec<String> = Vec::new();
+    authorisation::check_authorized(&no_egress_hosts)
+        .map_err(|_| "agent is not authorized for evaluate-trade".to_string())?;
 
     let tenant_id = hex::encode(tenant_context::tenant_did());
     let map_name = alloc::format!("z:{tenant_id}:{POLICY_MAP_TAIL}");
@@ -83,7 +90,7 @@ mod tests {
 
     #[test]
     fn policy_location_is_stable() {
-        assert_eq!(POLICY_MAP_TAIL, "trading-policy");
+        assert_eq!(POLICY_MAP_TAIL, "trading-policy-config");
         assert_eq!(POLICY_KEY, b"current");
     }
 }

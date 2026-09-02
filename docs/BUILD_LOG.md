@@ -1,48 +1,58 @@
 # Build Log
 
 Date: 2026-09-02  
-Environment: Windows 11, PowerShell, T3N testnet
+Environment: Windows 11, PowerShell, T3N testnet configuration
 
-## Pre-existing validated environment
+## CTO remediation inspection
 
-- `@terminal3/t3n-sdk@5.5.0` was present in the sibling `t3n-first` project.
-- The provided environment records Rust `1.98.0`, Cargo `1.98.0`, and targets `x86_64-pc-windows-msvc` and `wasm32-wasip2`.
-- Visual Studio C++ Build Tools are required for the Windows MSVC target.
-- The untouched Terminal 3 reference `z-tenant-flight` had previously built to `wasm32-wasip2`, passed seven native tests and native Clippy, and registered as contract ID 859. This project did not modify it or its registration record.
-- Existing T3N tenant authentication was known to work. No tenant DID was copied into application source.
+Before implementation, the current Terminal 3 Quickstart, Agent Auth, Invoke Contract, Public Agent, and Organization-owned Agent documentation was reviewed together with installed `@terminal3/t3n-sdk@5.5.0` declarations and the vendored WIT.
 
-## Inspection and design
+The selected model is a public/self-authenticated agent because the existing tenant is an individual tenant and no organization-owned-agent requirement was supplied. The resulting separation is:
 
-1. Read the sibling T3N connection/registration scripts without modifying them.
-2. Read `z-tenant-flight` WIT packages and Rust host usage without modifying the repository.
-3. Inspected the installed SDK 5.5.0 declarations for `T3nClient`, `TenantClient`, `maps.create`, `entrySet`, `entryGet`, `getStatus`, `contracts.register`, `listDetailed`, and `contracts.execute`.
-4. Confirmed `host:interfaces/kv-store@2.1.0` exposes `get` and `set-claims-digest`, and `host:tenant/tenant-context@1.0.0` returns the raw 20-byte tenant DID.
-5. Chose private tenant KV with a contract-only reader ACL and no contract writers. The management client performs bootstrap writes.
+- tenant administration: `T3N_API_KEY` through `connectTenantAdmin()`
+- data-owner grant bootstrap: `USER_KEY` plus public `AGENT_DID` through `connectDataOwner()`
+- business invocation: `AGENT_KEY` through `connectAgent()`
+
+The current Agent Auth guide documents a data-owner-signed `agent-auth-update`. SDK 5.5.0 confirms the `updateAgentAuth` read/merge/write helper for that flow and agent-side contract execution. The helper preserves unrelated grant rows instead of replacing the entire policy. The vendored `host:interfaces/authorisation@2.1.0` WIT confirms `check-authorized(list<string>)`, and the remediated WASM build validates the Rust binding and empty-host call locally.
 
 ## Trust-anchor finding
 
-SDK 5.5.0 requires `trustAnchor`. The testnet manifest fetch was already confirmed to fail as malformed at `https://cn-api.sg.testnet.t3n.terminal3.io/api/trust-manifest`. The client therefore isolates an explicit `unsafe_trust_server: true` testnet-only exception. Credentials are never logged.
+The current official Quickstart correctly uses `fetchTrustedManifest("testnet")`. In the reproduced environment, the SDK reported that the testnet manifest response was malformed. This project therefore isolates `{ unsafe_trust_server: true }` as an explicit testnet-only workaround. It disables server attestation verification and is not production-safe.
 
-## Commands and results
+## Remediation QA
 
-This section is updated with commands actually run in this repository.
+These are commands actually run after the CTO changes.
 
 | Check | Command | Result |
 |---|---|---|
 | Rust format | `cargo fmt --all -- --check` | Passed, no diff |
 | Rust WASM release | `cargo build --target wasm32-wasip2 --release` | Passed |
-| Rust native tests | `cargo test --lib --target x86_64-pc-windows-msvc` | Passed: 16 passed, 0 failed |
+| Rust native tests | `cargo test --lib --target x86_64-pc-windows-msvc` | Passed: 17 passed, 0 failed |
 | Rust native Clippy | `cargo clippy --all-targets --target x86_64-pc-windows-msvc -- -D warnings` | Passed, zero warnings |
 | Rust WASM Clippy | `cargo clippy --target wasm32-wasip2 --release -- -D warnings` | Passed, zero warnings |
-| Client install | `npm install` | Passed: 22 packages added, 0 vulnerabilities reported |
+| Client install | `npm install` | Passed: up to date, 23 packages audited, 0 vulnerabilities |
 | TypeScript | `npm run typecheck` | Passed |
-| Offline demo | `npm run demo` | Passed: 8/8 scenarios |
-| T3N registration | `npm run register` | Blocked until `T3N_API_KEY` is available in this process |
-| Policy setup | `npm run setup` | Blocked until registration and credentials |
-| Live invocation | `npm run demo:live` | Blocked until registration, setup, and credentials |
+| Offline demo | `npm run demo` | Passed: 8/8 deterministic scenarios |
+| Static unit/field scan | `rg` over Rust/TypeScript source excluding dependencies and build output | No Rust `f32`/`f64`, legacy wire fields, or blind `as PolicyDecision` cast |
+| Secret scan | `rg` over tracked project content excluding dependencies and build output | No T3N-key-shaped or 64-hex-private-key value found |
+| Patch whitespace | `git diff --check` | Passed; only Git's Windows line-ending notices |
 
-The release component is 150,480 bytes with SHA-256 `21AE314320939FBDC512CBA134755E5A8743DB573A3315648B6259CEFB6348FC`.
+The release component is 153,836 bytes with SHA-256 `860D752EA211698440732E8AD7E85F08A54D2FC20FD137E678BECE7F42ABE3D8`.
 
-The registration command was run once without a credential to validate its preflight path. It stopped before any network call with `T3N_API_KEY is required for live T3N operations`; no registration record was created and no contract ID is claimed.
+## Live-mutation status
 
-No real exchange, wallet, market-data service, or funds are used by any command.
+No live command was run during CTO remediation:
+
+- `npm run register` was not run.
+- `npm run authorize` was not run.
+- `npm run setup` was not run.
+- `npm run demo:live` was not run.
+
+No contract was registered, no contract ID was generated, no delegation grant or policy map was written, and no local registration/authorization record exists. Version remains `0.1.0`. No real exchange, wallet, market-data service, or funds are used by any project command.
+
+## Remaining live uncertainties
+
+- The testnet trust manifest should be retried before registration because remote state may have changed; production cannot use the unsafe fallback.
+- The compiled WIT and SDK types confirm `check-authorized([])` for a no-egress contract, but this exact bound-grant/empty-host path has not yet been exercised end to end on testnet.
+- The SDK exposes convergent map updates but not a typed full-map metadata read through `TenantMapsNamespace`; setup reapplies desired ACL properties and verifies the policy entry rather than claiming full ACL read-back.
+- Receipt retrieval and independent claims-digest verification are not implemented.

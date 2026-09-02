@@ -5,6 +5,7 @@
 
 # Local deployment state (contains the tenant DID)
 client/contract-registration.json
+client/agent-authorization.json
 
 # Build and dependency output
 contract/target/
