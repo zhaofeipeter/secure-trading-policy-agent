@@ -1,7 +1,7 @@
 import { connectAgent } from "./agent.js";
 import { readAgentAuthorization } from "./authorization.js";
 import { readRegistration } from "./registration.js";
-import type { TradeIntent } from "./types.js";
+import { ORIGINAL_VERSION, type TradeIntent } from "./types.js";
 
 const intent: TradeIntent = {
   symbol: "SOL",
@@ -57,13 +57,13 @@ try {
   console.log("DIAGNOSTIC_EXECUTE_SHAPE");
   console.log(`authenticatedDid: ${authenticatedDid}`);
   console.log(`script_name: ${registration.scriptName}`);
-  console.log("script_version: 0.1.0");
+  console.log(`script_version: ${ORIGINAL_VERSION}`);
   console.log("function_name: evaluate-trade");
   console.log(`pii_did: ${authorization.dataOwnerDid}`);
 
   const response: unknown = await agentClient.executeAndDecode({
     script_name: registration.scriptName,
-    script_version: "0.1.0",
+    script_version: ORIGINAL_VERSION,
     function_name: "evaluate-trade",
     pii_did: authorization.dataOwnerDid,
     input: intent,

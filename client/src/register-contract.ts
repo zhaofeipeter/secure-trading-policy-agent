@@ -2,11 +2,15 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import {
+  ORIGINAL_ARTIFACT_BINDING,
+  assertWasmArtifactBinding,
+} from "./artifact-binding.js";
 import { connectTenantAdmin } from "./tenant-admin.js";
 import { REGISTRATION_PATH } from "./registration.js";
 import {
   CONTRACT_TAIL,
-  CONTRACT_VERSION,
+  ORIGINAL_VERSION,
   type ContractRegistration,
 } from "./types.js";
 
@@ -25,8 +29,14 @@ if (existsSync(REGISTRATION_PATH)) {
 }
 
 if (!existsSync(WASM_PATH)) {
-  throw new Error(`WASM artifact not found at ${WASM_PATH}. Build the Rust contract first.`);
+  throw new Error(
+    `Historical ${ORIGINAL_VERSION} WASM artifact not found at ${WASM_PATH}. ` +
+      "The current source builds version 0.1.1; do not substitute that artifact.",
+  );
 }
+
+const wasm = await readFile(WASM_PATH);
+assertWasmArtifactBinding(wasm, ORIGINAL_ARTIFACT_BINDING);
 
 const { tenant, tenantDid } = await connectTenantAdmin();
 const canonicalName = tenant.canonicalName(CONTRACT_TAIL);
@@ -39,10 +49,9 @@ if (existing) {
   );
 }
 
-const wasm = await readFile(WASM_PATH);
 const result = await tenant.contracts.register({
   tail: CONTRACT_TAIL,
-  version: CONTRACT_VERSION,
+  version: ORIGINAL_VERSION,
   wasm,
 });
 
@@ -50,7 +59,7 @@ const registration: ContractRegistration = {
   tenantDid,
   tail: CONTRACT_TAIL,
   scriptName: result.name,
-  version: CONTRACT_VERSION,
+  version: ORIGINAL_VERSION,
   contractId: result.contract_id,
   registeredAt: new Date().toISOString(),
 };

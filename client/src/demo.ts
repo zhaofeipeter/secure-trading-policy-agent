@@ -3,9 +3,9 @@ import { readAgentAuthorization } from "./authorization.js";
 import { parsePolicyDecision } from "./policy-decision.js";
 import { readRegistration } from "./registration.js";
 import {
-  CONTRACT_VERSION,
   DEFAULT_POLICY,
   EVALUATE_TRADE_FUNCTION,
+  ORIGINAL_VERSION,
   type PolicyDecision,
   type ReasonCode,
   type TradeIntent,
@@ -147,7 +147,7 @@ async function createEvaluator(): Promise<(intent: TradeIntent) => Promise<Polic
   return async (intent) => {
     const response: unknown = await agentClient.executeAndDecode({
       contract_id: registration.scriptName,
-      contract_version: CONTRACT_VERSION,
+      contract_version: ORIGINAL_VERSION,
       function_name: EVALUATE_TRADE_FUNCTION,
       pii_did: authorization.dataOwnerDid,
       input: intent,

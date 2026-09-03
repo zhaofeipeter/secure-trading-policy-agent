@@ -6,8 +6,8 @@ import { AUTHORIZATION_PATH } from "./authorization.js";
 import { connectDataOwner } from "./data-owner.js";
 import { readRegistration } from "./registration.js";
 import {
-  CONTRACT_VERSION,
   EVALUATE_TRADE_FUNCTION,
+  ORIGINAL_VERSION,
   type AgentAuthorization,
 } from "./types.js";
 
@@ -22,7 +22,7 @@ const registration = await readRegistration();
 const { dataOwnerClient, dataOwnerDid } = await connectDataOwner();
 const grant: AgentAuthScriptGrant = {
   scriptName: registration.scriptName,
-  versionReq: CONTRACT_VERSION,
+  versionReq: ORIGINAL_VERSION,
   functions: [EVALUATE_TRADE_FUNCTION],
   scopes: [],
   readScopes: [],
@@ -38,7 +38,7 @@ const authorization: AgentAuthorization = {
   agentDid,
   dataOwnerDid,
   scriptName: registration.scriptName,
-  version: CONTRACT_VERSION,
+  version: ORIGINAL_VERSION,
   functionName: EVALUATE_TRADE_FUNCTION,
   authorizedAt: new Date().toISOString(),
 };
@@ -47,5 +47,5 @@ await writeFile(AUTHORIZATION_PATH, `${JSON.stringify(authorization, null, 2)}\n
 console.log("Agent authorization configured.");
 console.log(`agentDid: ${agentDid}`);
 console.log(`dataOwnerDid: ${dataOwnerDid}`);
-console.log(`permission: ${registration.scriptName}@${CONTRACT_VERSION}::${EVALUATE_TRADE_FUNCTION}`);
+console.log(`permission: ${registration.scriptName}@${ORIGINAL_VERSION}::${EVALUATE_TRADE_FUNCTION}`);
 console.log(`metadata: ${AUTHORIZATION_PATH}`);

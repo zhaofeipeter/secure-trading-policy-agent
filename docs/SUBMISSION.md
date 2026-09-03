@@ -87,8 +87,8 @@ The offline demo prints all eight deterministic decisions without contacting T3N
 ## Links
 
 - GitHub repository: https://github.com/zhaofeipeter/secure-trading-policy-agent
-- Live evidence and exact integration notes: https://github.com/zhaofeipeter/secure-trading-policy-agent/blob/fix/cto-review-remediation/docs/BUILD_LOG.md
-- Reproducible T3N findings: https://github.com/zhaofeipeter/secure-trading-policy-agent/blob/fix/cto-review-remediation/docs/BUGS.md
+- Live evidence and exact integration notes: [BUILD_LOG.md](BUILD_LOG.md)
+- Reproducible T3N findings: [BUGS.md](BUGS.md)
 
 ## Screenshot checklist
 

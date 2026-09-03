@@ -6,13 +6,13 @@ import { connectTenantAdmin } from "./tenant-admin.js";
 import {
   CONTRACT_TAIL,
   EVALUATE_TRADE_FUNCTION,
+  WORKAROUND_VERSION,
   type PolicyDecision,
   type ReasonCode,
   type TradeIntent,
 } from "./types.js";
 
 const DIAGNOSTIC_CONTRACT_ID = 868;
-const DIAGNOSTIC_VERSION = "0.1.1";
 const DIAGNOSTIC_REGISTRATION_PATH = fileURLToPath(
   new URL("../contract-registration-0.1.1.json", import.meta.url),
 );
@@ -116,12 +116,12 @@ const registration = JSON.parse(
 if (
   registration.contractId !== DIAGNOSTIC_CONTRACT_ID ||
   registration.tail !== CONTRACT_TAIL ||
-  registration.version !== DIAGNOSTIC_VERSION ||
+  registration.version !== WORKAROUND_VERSION ||
   typeof registration.scriptName !== "string" ||
   typeof registration.tenantDid !== "string"
 ) {
   throw new Error(
-    `Diagnostic registration must identify contract ${DIAGNOSTIC_CONTRACT_ID} / ${CONTRACT_TAIL}@${DIAGNOSTIC_VERSION}`,
+    `Diagnostic registration must identify contract ${DIAGNOSTIC_CONTRACT_ID} / ${CONTRACT_TAIL}@${WORKAROUND_VERSION}`,
   );
 }
 
@@ -131,7 +131,7 @@ if (tenantDid !== registration.tenantDid) {
 }
 
 console.log(
-  `Mode: LIVE T3N TESTNET TEE (${registration.scriptName}@${DIAGNOSTIC_VERSION}, contract ${DIAGNOSTIC_CONTRACT_ID})`,
+  `Mode: LIVE T3N TESTNET TEE (${registration.scriptName}@${WORKAROUND_VERSION}, contract ${DIAGNOSTIC_CONTRACT_ID})`,
 );
 console.log(`Tenant DID: ${tenantDid}`);
 console.log("Security note: testnet uses the documented unsafe trust-server workaround.\n");
@@ -139,7 +139,7 @@ console.log("Security note: testnet uses the documented unsafe trust-server work
 let passed = 0;
 for (const scenario of scenarios) {
   const response: unknown = await tenant.contracts.execute(CONTRACT_TAIL, {
-    version: DIAGNOSTIC_VERSION,
+    version: WORKAROUND_VERSION,
     functionName: EVALUATE_TRADE_FUNCTION,
     input: scenario.intent,
   });

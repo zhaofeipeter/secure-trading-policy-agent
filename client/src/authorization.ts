@@ -2,8 +2,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import {
-  CONTRACT_VERSION,
   EVALUATE_TRADE_FUNCTION,
+  ORIGINAL_VERSION,
   type AgentAuthorization,
 } from "./types.js";
 
@@ -17,7 +17,7 @@ export async function readAgentAuthorization(): Promise<AgentAuthorization> {
     typeof parsed.agentDid !== "string" ||
     typeof parsed.dataOwnerDid !== "string" ||
     typeof parsed.scriptName !== "string" ||
-    parsed.version !== CONTRACT_VERSION ||
+    parsed.version !== ORIGINAL_VERSION ||
     parsed.functionName !== EVALUATE_TRADE_FUNCTION ||
     typeof parsed.authorizedAt !== "string"
   ) {

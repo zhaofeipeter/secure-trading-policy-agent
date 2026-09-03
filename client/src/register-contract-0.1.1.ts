@@ -2,11 +2,18 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import {
+  WORKAROUND_ARTIFACT_BINDING,
+  assertWasmArtifactBinding,
+} from "./artifact-binding.js";
 import { readRegistration } from "./registration.js";
 import { connectTenantAdmin } from "./tenant-admin.js";
-import { CONTRACT_TAIL } from "./types.js";
+import {
+  CONTRACT_TAIL,
+  ORIGINAL_VERSION,
+  WORKAROUND_VERSION,
+} from "./types.js";
 
-const DIAGNOSTIC_VERSION = "0.1.1";
 const EXPECTED_BASE_CONTRACT_ID = 863;
 const EXPECTED_SCRIPT_NAME =
   "z:f62da0c78b9ffd0fce31193d4e7db02f272adc0e:trading-policy";
@@ -24,7 +31,7 @@ interface DiagnosticRegistration {
   tenantDid: string;
   tail: typeof CONTRACT_TAIL;
   scriptName: string;
-  version: typeof DIAGNOSTIC_VERSION;
+  version: typeof WORKAROUND_VERSION;
   contractId: number;
   registeredAt: string;
   basedOnContractId: typeof EXPECTED_BASE_CONTRACT_ID;
@@ -39,12 +46,14 @@ if (existsSync(DIAGNOSTIC_REGISTRATION_PATH)) {
 if (!existsSync(WASM_PATH)) {
   throw new Error(`Diagnostic WASM artifact not found at ${WASM_PATH}`);
 }
+const wasm = await readFile(WASM_PATH);
+assertWasmArtifactBinding(wasm, WORKAROUND_ARTIFACT_BINDING);
 
 const baseRegistration = await readRegistration();
 if (
   baseRegistration.contractId !== EXPECTED_BASE_CONTRACT_ID ||
   baseRegistration.scriptName !== EXPECTED_SCRIPT_NAME ||
-  baseRegistration.version !== "0.1.0"
+  baseRegistration.version !== ORIGINAL_VERSION
 ) {
   throw new Error("The immutable 0.1.0 registration evidence does not match contract 863");
 }
@@ -54,10 +63,9 @@ if (tenantDid !== baseRegistration.tenantDid) {
   throw new Error("Authenticated tenant DID does not match the 0.1.0 registration evidence");
 }
 
-const wasm = await readFile(WASM_PATH);
 const result = await tenant.contracts.register({
   tail: CONTRACT_TAIL,
-  version: DIAGNOSTIC_VERSION,
+  version: WORKAROUND_VERSION,
   wasm,
 });
 if (result.name !== EXPECTED_SCRIPT_NAME) {
@@ -68,7 +76,7 @@ const registration: DiagnosticRegistration = {
   tenantDid,
   tail: CONTRACT_TAIL,
   scriptName: result.name,
-  version: DIAGNOSTIC_VERSION,
+  version: WORKAROUND_VERSION,
   contractId: result.contract_id,
   registeredAt: new Date().toISOString(),
   basedOnContractId: EXPECTED_BASE_CONTRACT_ID,

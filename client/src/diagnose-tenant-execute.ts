@@ -2,8 +2,8 @@ import { readRegistration } from "./registration.js";
 import { connectTenantAdmin } from "./tenant-admin.js";
 import {
   CONTRACT_TAIL,
-  CONTRACT_VERSION,
   EVALUATE_TRADE_FUNCTION,
+  ORIGINAL_VERSION,
   type TradeIntent,
 } from "./types.js";
 
@@ -53,11 +53,11 @@ try {
     registration.contractId !== EXPECTED_CONTRACT_ID ||
     registration.scriptName !== EXPECTED_SCRIPT_NAME ||
     registration.tail !== CONTRACT_TAIL ||
-    registration.version !== CONTRACT_VERSION
+    registration.version !== ORIGINAL_VERSION
   ) {
     throw new Error(
       `Registration record must identify contract ${EXPECTED_CONTRACT_ID}, ` +
-        `${EXPECTED_SCRIPT_NAME}@${CONTRACT_VERSION}`,
+        `${EXPECTED_SCRIPT_NAME}@${ORIGINAL_VERSION}`,
     );
   }
 
@@ -70,11 +70,11 @@ try {
   console.log(`authenticatedDid: ${authenticatedDid}`);
   console.log(`contractTail: ${CONTRACT_TAIL}`);
   console.log(`contractId: ${EXPECTED_CONTRACT_ID}`);
-  console.log(`version: ${CONTRACT_VERSION}`);
+  console.log(`version: ${ORIGINAL_VERSION}`);
   console.log(`functionName: ${EVALUATE_TRADE_FUNCTION}`);
 
   const response: unknown = await tenant.contracts.execute("trading-policy", {
-    version: "0.1.0",
+    version: ORIGINAL_VERSION,
     functionName: "evaluate-trade",
     input: intent,
   });

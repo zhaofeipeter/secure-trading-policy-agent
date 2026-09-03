@@ -1,5 +1,6 @@
 export const CONTRACT_TAIL = "trading-policy";
-export const CONTRACT_VERSION = "0.1.0";
+export const ORIGINAL_VERSION = "0.1.0";
+export const WORKAROUND_VERSION = "0.1.1";
 export const POLICY_MAP_TAIL = "trading-policy-config";
 export const POLICY_KEY = "current";
 export const EVALUATE_TRADE_FUNCTION = "evaluate-trade";
@@ -67,7 +68,7 @@ export interface ContractRegistration {
   tenantDid: string;
   tail: typeof CONTRACT_TAIL;
   scriptName: string;
-  version: typeof CONTRACT_VERSION;
+  version: typeof ORIGINAL_VERSION;
   contractId: number;
   registeredAt: string;
 }
@@ -76,7 +77,7 @@ export interface AgentAuthorization {
   agentDid: string;
   dataOwnerDid: string;
   scriptName: string;
-  version: typeof CONTRACT_VERSION;
+  version: typeof ORIGINAL_VERSION;
   functionName: typeof EVALUATE_TRADE_FUNCTION;
   authorizedAt: string;
 }

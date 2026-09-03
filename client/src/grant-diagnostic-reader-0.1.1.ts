@@ -3,12 +3,15 @@ import { fileURLToPath } from "node:url";
 
 import { readRegistration } from "./registration.js";
 import { connectTenantAdmin } from "./tenant-admin.js";
-import { CONTRACT_TAIL, POLICY_MAP_TAIL } from "./types.js";
+import {
+  CONTRACT_TAIL,
+  ORIGINAL_VERSION,
+  POLICY_MAP_TAIL,
+  WORKAROUND_VERSION,
+} from "./types.js";
 
 const ORIGINAL_CONTRACT_ID = 863;
-const ORIGINAL_VERSION = "0.1.0";
 const DIAGNOSTIC_CONTRACT_ID = 868;
-const DIAGNOSTIC_VERSION = "0.1.1";
 const DIAGNOSTIC_REGISTRATION_PATH = fileURLToPath(
   new URL("../contract-registration-0.1.1.json", import.meta.url),
 );
@@ -64,12 +67,12 @@ try {
   ) as Partial<DiagnosticRegistration>;
   if (
     diagnostic.contractId !== DIAGNOSTIC_CONTRACT_ID ||
-    diagnostic.version !== DIAGNOSTIC_VERSION ||
+    diagnostic.version !== WORKAROUND_VERSION ||
     diagnostic.tail !== CONTRACT_TAIL ||
     typeof diagnostic.tenantDid !== "string"
   ) {
     throw new Error(
-      `Diagnostic registration must identify contract ${DIAGNOSTIC_CONTRACT_ID} / ${CONTRACT_TAIL}@${DIAGNOSTIC_VERSION}`,
+      `Diagnostic registration must identify contract ${DIAGNOSTIC_CONTRACT_ID} / ${CONTRACT_TAIL}@${WORKAROUND_VERSION}`,
     );
   }
   if (diagnostic.tenantDid !== original.tenantDid) {

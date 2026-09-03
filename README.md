@@ -92,7 +92,8 @@ The contract constructs the map name from the host-provided tenant DID. The orig
 - `@terminal3/t3n-sdk@5.5.0`
 
 ```powershell
-cd C:\project\superteam\secure-trading-policy-agent\client
+# From the repository root
+cd client
 npm install
 ```
 
@@ -101,7 +102,8 @@ npm install
 These commands do not contact T3N:
 
 ```powershell
-cd C:\project\superteam\secure-trading-policy-agent\contract
+# From the repository root
+cd contract
 cargo fmt --all -- --check
 cargo build --target wasm32-wasip2 --release
 cargo test --lib --target x86_64-pc-windows-msvc
@@ -111,6 +113,8 @@ cargo clippy --target wasm32-wasip2 --release -- -D warnings
 cd ..\client
 npm install
 npm run typecheck
+npm run test:parser
+npm run test:version-binding
 npm run demo
 ```
 
@@ -124,6 +128,8 @@ Two immutable versions are recorded under the same contract tail:
 |---|---:|---|---|
 | `0.1.0` | 863 | Imports `host:interfaces/authorisation@2.1.0`; calls `check-authorized` at entry | Repeated `action.execute` `-32603 Internal error` |
 | `0.1.1` | 868 | Diagnostic workaround removes only that import/call | Live T3N testnet TEE demo passed 8/8 scenarios |
+
+The two registration helpers pin the exact recorded SHA-256 for their respective immutable WASM artifacts before creating an SDK connection. The default `npm run register` remains the historical 0.1.0 path and rejects bytes built from the current 0.1.1 source; `npm run register:0.1.1` accepts only the recorded workaround artifact. A version/artifact mismatch therefore fails locally before any registration request.
 
 The evidence strongly isolates the failure to the `host:interfaces/authorisation@2.1.0` / `check-authorized` path in the tested T3N testnet environment. Local WIT accepts it and 0.1.0 registered successfully, but runtime execution failed; removing that dependency made the otherwise equivalent contract execute successfully. This appears to be a host-surface/runtime compatibility discrepancy, not mathematical proof of causation or a confirmed T3N security vulnerability.
 

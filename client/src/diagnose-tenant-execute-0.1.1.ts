@@ -5,11 +5,11 @@ import { connectTenantAdmin } from "./tenant-admin.js";
 import {
   CONTRACT_TAIL,
   EVALUATE_TRADE_FUNCTION,
+  WORKAROUND_VERSION,
   type TradeIntent,
 } from "./types.js";
 
 const DIAGNOSTIC_CONTRACT_ID = 868;
-const DIAGNOSTIC_VERSION = "0.1.1";
 const DIAGNOSTIC_REGISTRATION_PATH = fileURLToPath(
   new URL("../contract-registration-0.1.1.json", import.meta.url),
 );
@@ -64,11 +64,11 @@ try {
   if (
     registration.contractId !== DIAGNOSTIC_CONTRACT_ID ||
     registration.tail !== CONTRACT_TAIL ||
-    registration.version !== DIAGNOSTIC_VERSION ||
+    registration.version !== WORKAROUND_VERSION ||
     typeof registration.tenantDid !== "string"
   ) {
     throw new Error(
-      `Diagnostic registration must identify contract ${DIAGNOSTIC_CONTRACT_ID} / ${CONTRACT_TAIL}@${DIAGNOSTIC_VERSION}`,
+      `Diagnostic registration must identify contract ${DIAGNOSTIC_CONTRACT_ID} / ${CONTRACT_TAIL}@${WORKAROUND_VERSION}`,
     );
   }
 
@@ -81,11 +81,11 @@ try {
   console.log(`authenticatedDid: ${authenticatedDid}`);
   console.log(`contractTail: ${CONTRACT_TAIL}`);
   console.log(`contractId: ${DIAGNOSTIC_CONTRACT_ID}`);
-  console.log(`version: ${DIAGNOSTIC_VERSION}`);
+  console.log(`version: ${WORKAROUND_VERSION}`);
   console.log(`functionName: ${EVALUATE_TRADE_FUNCTION}`);
 
   const response: unknown = await tenant.contracts.execute(CONTRACT_TAIL, {
-    version: DIAGNOSTIC_VERSION,
+    version: WORKAROUND_VERSION,
     functionName: EVALUATE_TRADE_FUNCTION,
     input: intent,
   });
