@@ -1,134 +1,160 @@
 # T3N Secure Trading Policy Agent
 
-A proof-of-concept deterministic TEE authorization layer between an AI trading agent and execution infrastructure. The AI proposes a trade; a Rust contract hosted by T3N reads tenant-owned policy and returns `ALLOW` or `DENY`. This repository never submits a trade, holds no exchange or wallet credentials, and uses no funds.
+A proof-of-concept deterministic TEE policy layer between an AI trading agent and execution infrastructure. A Rust contract hosted by T3N reads tenant-owned policy and returns `ALLOW` or `DENY`. This repository never submits a trade, holds no exchange or wallet execution credentials, and uses no funds.
 
-## The problem
+## Why this exists
 
-An LLM can be useful for proposing actions, but prompt injection, hallucinations, and compromised context make it a poor security boundary. An enterprise trading agent therefore should not possess unconstrained execution authority. This project moves the final policy decision into deterministic code running behind the T3N tenant boundary.
+An LLM is useful for proposing actions, but prompt injection, hallucinations, and compromised context make it a poor security boundary. The TEE contract remains the deterministic policy boundary. Credential modules and process environments are separated operationally, but the tested tenant/admin and nominal-agent credentials resolved to the same T3N DID, so this deployment does not claim a T3N principal or privilege boundary between them.
 
 ```mermaid
 flowchart LR
-    A[Untrusted AI agent] -->|TradeIntent| C[TypeScript client]
-    C -->|authenticated invocation| T[T3N testnet]
-    P[Tenant admin] -->|policy setup| K[(Private tenant KV)]
-    T --> E[Rust TEE contract]
-    K -->|contract-only read| E
-    E -->|ALLOW or DENY + reason codes| C
-    E -->|SHA-256 claims digest| L[(T3N transaction ledger)]
-    C -. no execution adapter .-> X[No real trade]
+    Admin[Tenant/Admin credential<br/>T3N_API_KEY] --> Shared[Shared observed T3N DID]
+    Agent[Nominal Agent credential<br/>AGENT_KEY] --> Shared
+    Shared -->|tenant administration path| T[T3N testnet]
+    Shared -->|nominal agent invocation path| T
+    Shared -->|provision/administer| KV[(Private policy map<br/>trading-policy-config)]
+    User[Data Owner<br/>USER_KEY] -->|0.1.0 grant| Auth[Authorisation policy]
+    T --> Original[863 / 0.1.0<br/>check-authorized<br/>runtime -32603]
+    Auth --> Original
+    T --> Diagnostic[868 / 0.1.1<br/>diagnostic workaround<br/>live 8/8]
+    KV --> Original
+    KV --> Diagnostic
+    Diagnostic -->|ALLOW or DENY| Admin
+    Diagnostic -->|set transaction claims digest| T
+    Admin -. no execution adapter .-> X[No real trade]
 ```
 
-The LLM proposes. The TEE authorizes.
+The LLM proposes. The TEE contract enforces deterministic policy. The admin and nominal-agent code paths use different credential values and modules, but no T3N authorization boundary between those credentials was observed. The successful live result is from diagnostic version 0.1.1, which intentionally omits `check-authorized`; it demonstrates TEE policy execution, not independent agent/data-owner authorization.
 
-## What is enforced
+## Integer policy units
 
-The default policy allows `SOL` and `BTC` on `JUPITER`, limits a single proposed trade to USD 1,000, limits the supplied daily-loss state to USD 500, and requires confidence of at least `0.80`. The contract reports all applicable violations in a fixed order using machine-readable codes.
+Money is represented as integer US-dollar cents and confidence as integer basis points. The Rust policy engine contains no floating-point monetary or confidence comparisons.
 
-Policy is stored at `z:<authenticated-tenant-id>:trading-policy`, key `current`. The tenant DID is obtained from the authenticated session and is never hardcoded. The map setup scopes contract reads to the registered contract ID, enables tenant-admin read-back, and gives no contract writer permission. Tenant administrators use the T3N control plane to initialize it.
+| Meaning | Wire value |
+|---|---:|
+| USD 500.00 | `notionalUsdCents: 50000` |
+| USD 1,000.00 limit | `maxTradeNotionalUsdCents: 100000` |
+| 91% confidence | `confidenceBps: 9100` |
+| 80% minimum | `minConfidenceBps: 8000` |
 
-## Prerequisites
+Example intent:
 
-- Windows 11 or another Rust/Node-supported platform
+```json
+{
+  "symbol": "SOL",
+  "side": "BUY",
+  "notionalUsdCents": 50000,
+  "venue": "JUPITER",
+  "confidenceBps": 9100,
+  "dailyLossUsdCents": 10000
+}
+```
+
+The default policy allows `SOL` and `BTC` on `JUPITER`, caps a proposed trade at 100,000 cents, caps the caller-supplied daily-loss value at 50,000 cents, and requires 8,000 basis points of confidence.
+
+## Credential paths and observed identity
+
+Never place all three credentials in one runtime or shell.
+
+| Operational path | Environment | Intended responsibility |
+|---|---|---|
+| Tenant/admin | `T3N_API_KEY` | Tenant verification, contract registration, map provisioning, policy administration |
+| Data owner | `USER_KEY`, plus public `AGENT_DID` | Grant or revoke the agent's exact contract/function authority |
+| Nominal agent runtime | `AGENT_KEY` | Application code invokes `evaluate-trade`; the demo module does not construct `TenantClient` |
+
+On 2026-09-02, the different `T3N_API_KEY` and separately issued `AGENT_KEY` values both authenticated as `did:t3n:f62da0c78b9ffd0fce31193d4e7db02f272adc0e`. With only `AGENT_KEY` present, read-only calls to `tenant.me()`, `maps.getStatus`, `maps.entryGet(current)`, and `contracts.listDetailed` all succeeded. No tenant control-plane write was tested. Consequently, process-level secret separation remains useful operational hygiene, but it is not evidence of T3N authorization separation and creates no demonstrated protection against tenant writes.
+
+### Agent onboarding choice
+
+This demo used the public/self-authenticating onboarding flow for an individual tenant. In this test environment it produced a different credential value that resolved to the same DID as the tenant/admin credential:
+
+1. Obtain a separately issued credited agent key from the T3N claim page.
+2. In an agent-only shell, use the SDK CLI with `--api-key $env:AGENT_KEY` to run `whoami`, scaffold/host the public agent card, and verify it.
+3. Copy the session-returned DID into `AGENT_DID` in the separate data-owner authorization shell.
+4. The recorded 0.1.0 flow used `npm run authorize` with `USER_KEY` and `AGENT_DID`. The SDK helper implementing the documented `agent-auth-update` flow performs a read/merge/write for only `trading-policy@0.1.0::evaluate-trade`, with empty data scopes and no outbound hosts, while preserving unrelated grants.
+5. `npm run demo:live` targets 0.1.0 using only `AGENT_KEY`; that registered contract repeatedly failed at runtime with `action.execute` error `-32603`.
+
+`USER_KEY` is required for the 0.1.0 authorization bootstrap because the grant is a SelfOnly data-owner write. It is not required or read by the nominal-agent execution module. Any future retry of that authorization design in this environment is a self/shared-DID flow and must not be described as proof of cross-principal delegation.
+
+## Tenant policy storage
+
+- Contract: `z:<tenant-id>:trading-policy`
+- Policy map: `z:<tenant-id>:trading-policy-config`
+- Entry key: `current`
+
+The contract constructs the map name from the host-provided tenant DID. The original setup created the private map for contract 863 and verified its policy value. A later readers-only patch requesting `[863, 868]` was accepted with SDK response `{}` so diagnostic version 0.1.1 could read the same policy. SDK 5.5.0 exposes no ACL readback API, so the final reader list was not independently retrieved; no other map setting or policy value was included in that patch.
+
+## Prerequisites and install
+
 - Node.js 18+
 - Rust with `wasm32-wasip2`
-- On Windows, Visual Studio C++ Build Tools for the MSVC native test target
-- A T3N testnet API key only for registration, policy setup, or live execution
-
-The API key is used by the SDK for authentication. It is not an exchange key or a wallet private key used to move funds.
-
-## Setup
+- Visual Studio C++ Build Tools for Windows native tests
+- `@terminal3/t3n-sdk@5.5.0`
 
 ```powershell
-cd C:\project\superteam\secure-trading-policy-agent\client
+# From the repository root
+cd client
 npm install
-$env:T3N_API_KEY = "your-testnet-key"
 ```
 
-Never commit `.env` files or paste the key into source, logs, screenshots, or issue reports.
+## Local build and QA
 
-## Build and test
+These commands do not contact T3N:
 
 ```powershell
-cd C:\project\superteam\secure-trading-policy-agent\contract
+# From the repository root
+cd contract
+cargo fmt --all -- --check
 cargo build --target wasm32-wasip2 --release
 cargo test --lib --target x86_64-pc-windows-msvc
 cargo clippy --all-targets --target x86_64-pc-windows-msvc -- -D warnings
 cargo clippy --target wasm32-wasip2 --release -- -D warnings
 
 cd ..\client
+npm install
 npm run typecheck
+npm run test:parser
+npm run test:version-binding
 npm run demo
 ```
 
-Do not use bare `cargo test --lib` in this repository: `.cargo/config.toml` defaults builds to WASM, and Windows cannot directly execute the resulting `.wasm` test binary.
+Bare `cargo test --lib` inherits the repository's WASM default target, which Windows cannot execute directly. Always select the native MSVC target as shown.
 
-## Register and configure on T3N testnet
+## Live testnet result
 
-Build the release WASM first, then:
+Two immutable versions are recorded under the same contract tail:
 
-```powershell
-cd C:\project\superteam\secure-trading-policy-agent\client
-npm run register
-npm run setup
-npm run demo:live
-```
+| Version | Contract ID | Authorisation host path | Observed result |
+|---|---:|---|---|
+| `0.1.0` | 863 | Imports `host:interfaces/authorisation@2.1.0`; calls `check-authorized` at entry | Repeated `action.execute` `-32603 Internal error` |
+| `0.1.1` | 868 | Diagnostic workaround removes only that import/call | Live T3N testnet TEE demo passed 8/8 scenarios |
 
-Registration uses tail `trading-policy` and version `0.1.0`, prints the numeric contract ID, and saves local metadata to ignored file `client/contract-registration.json`. Two guards prevent blind re-registration: an existing local metadata file stops immediately, and the live tenant inventory is checked before publishing. Versions are never bumped automatically.
+The two registration helpers pin the exact recorded SHA-256 for their respective immutable WASM artifacts before creating an SDK connection. The default `npm run register` remains the historical 0.1.0 path and rejects bytes built from the current 0.1.1 source; `npm run register:0.1.1` accepts only the recorded workaround artifact. A version/artifact mismatch therefore fails locally before any registration request.
 
-`setup` creates the private map only when absent, refuses to run while it is deleting, refuses to overwrite a different policy, and verifies the stored value by reading it back.
+The evidence strongly isolates the failure to the `host:interfaces/authorisation@2.1.0` / `check-authorized` path in the tested T3N testnet environment. Local WIT accepts it and 0.1.0 registered successfully, but runtime execution failed; removing that dependency made the otherwise equivalent contract execute successfully. This appears to be a host-surface/runtime compatibility discrepancy, not mathematical proof of causation or a confirmed T3N security vulnerability.
+
+Do not re-register either version or rerun setup. The successful 0.1.1 demo contacted no exchange and executed no trade.
 
 ## Demo modes
 
-`npm run demo` runs eight deterministic fixtures through a trusted local harness. It is suitable for reviewing output without a key, but it is explicitly **not** evidence of T3N or TEE execution.
+`npm run demo` runs eight fixtures through a trusted local harness. It is useful for deterministic output review but is not evidence of T3N execution.
 
-`npm run demo:live` invokes the registered WASM contract on T3N testnet and checks the same eight expected results. Neither mode has a trade execution adapter.
+`npm run demo:live` retains the original 0.1.0 nominal-agent path for reproducing the `-32603` result. It uses `AGENT_KEY`, validates the session DID, calls `T3nClient.executeAndDecode`, and runtime-validates decoded decisions if one is returned.
 
-Example output:
+`npm run demo:live:0.1.1` uses `T3N_API_KEY` and `TenantClient.contracts.execute` against registered contract 868. The recorded run returned every expected result: two `ALLOW` decisions and six `DENY` decisions, including all six ordered reasons for the multi-violation case. This is the successful 8/8 T3N TEE policy demo. Because 0.1.1 omits `check-authorized`, it does not demonstrate a separate agent principal, cross-principal delegation, or successful authorisation-host enforcement.
 
-```text
-Scenario: oversized SOL trade
-Decision: DENY
-Reasons:
-- NOTIONAL_LIMIT_EXCEEDED
+## Audit statement
 
-Scenario: valid SOL buy
-Decision: ALLOW
-Reasons:
-- none
-```
-
-## Security model
-
-- The LLM and its proposed intent are untrusted.
-- Deterministic Rust code is the authorization authority.
-- Policy is not accepted from the agent invocation payload.
-- Invalid JSON and invalid numeric values fail closed.
-- Each response is SHA-256 hashed into `kv-store.set-claims-digest`, binding it to the T3N transaction receipt/ledger facilities.
-- No HTTP, wallet, exchange, outbox, or signing host capability is imported by the business contract.
-- There is no trade execution code.
-
-See [docs/SECURITY.md](docs/SECURITY.md) for boundaries and limitations.
+The contract SHA-256 hashes its serialized decision and calls the vendored `kv-store.set-claims-digest` host function. Therefore, the contract **sets the transaction claims digest**. This repository does not independently retrieve or verify a T3N receipt, and it does not claim that verification has occurred. Receipt retrieval and independent verification remain future work.
 
 ## TESTNET-ONLY trust limitation
 
-`@terminal3/t3n-sdk@5.5.0` requires a trust anchor. During this build, the signed manifest endpoint returned a malformed manifest, so `client/src/t3n.ts` explicitly uses:
+SDK 5.5.0 exposes the `fetchTrustedManifest("testnet")` path. A live read-only recheck on 2026-09-02 still returned: `Trust manifest at https://cn-api.sg.testnet.t3n.terminal3.io/api/trust-manifest is malformed.` The client therefore isolates an explicit `{ unsafe_trust_server: true }` workaround for this bounty testnet only.
 
-```ts
-{ unsafe_trust_server: true }
-```
+This disables server attestation verification and is not production-safe. Production must restore a verified TrustAnchor and fail closed on verification failure. See [docs/BUGS.md](docs/BUGS.md).
 
-This disables server attestation verification and is **not production-safe**. It is isolated, named, logged by the live demo, and documented in [docs/BUGS.md](docs/BUGS.md). Production must load and verify a valid signed TrustAnchor and must fail closed if verification fails.
+## Security limitations and production path
 
-## Production path
+The tested tenant/admin and nominal-agent credentials share one observed T3N DID, and the nominal-agent credential successfully performed tenant control-plane reads. Write/admin mutation authority was not tested and is unknown. Diagnostic 0.1.1 has no `check-authorized` gate. The caller also supplies `dailyLossUsdCents` and `confidenceBps`; the contract validates their ranges and thresholds but cannot prove their provenance. Production must resolve the authorisation-host compatibility discrepancy, restore and verify caller authorization, clarify T3N credential/onboarding semantics, derive risk state from trusted protected sources, restore verified TrustAnchor handling, isolate wallet custody, add replay controls and independent receipt verification, and undergo independent security review.
 
-Before this concept could guard real execution, add a separately authorized Solana/Jupiter execution adapter, isolate wallet secrets from the agent, source daily loss from trusted accounting state rather than agent input, support dynamic risk budgets and multi-agent approvals, restore verified production TrustAnchor validation, add append-only decision querying, and build audited enterprise policy administration. Independent security review and operational controls would also be required.
-
-## Project layout
-
-```text
-contract/  Rust WASM component, WIT world, and unit tests
-client/    T3N connection, safe registration/setup, and CLI demo
-docs/      Architecture, security, build log, known bugs, submission text
-```
-
-The Terminal 3 [`z-tenant-flight`](https://github.com/Terminal-3/z-tenant-flight) project was used only as a structural reference for the current WIT host pattern.
+No current code is authorized to control real funds.

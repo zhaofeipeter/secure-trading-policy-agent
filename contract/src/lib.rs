@@ -15,8 +15,8 @@ use alloc::{string::String, vec::Vec};
 #[cfg(target_arch = "wasm32")]
 use models::Policy;
 
-pub const CONTRACT_VERSION: &str = "0.1.0";
-pub const POLICY_MAP_TAIL: &str = "trading-policy";
+pub const CONTRACT_VERSION: &str = "0.1.1";
+pub const POLICY_MAP_TAIL: &str = "trading-policy-config";
 pub const POLICY_KEY: &[u8] = b"current";
 
 wit_bindgen::generate!({
@@ -77,13 +77,13 @@ mod tests {
 
     #[test]
     fn contract_version_is_expected_semver() {
-        assert_eq!(CONTRACT_VERSION, "0.1.0");
+        assert_eq!(CONTRACT_VERSION, "0.1.1");
         assert_eq!(CONTRACT_VERSION.split('.').count(), 3);
     }
 
     #[test]
     fn policy_location_is_stable() {
-        assert_eq!(POLICY_MAP_TAIL, "trading-policy");
+        assert_eq!(POLICY_MAP_TAIL, "trading-policy-config");
         assert_eq!(POLICY_KEY, b"current");
     }
 }

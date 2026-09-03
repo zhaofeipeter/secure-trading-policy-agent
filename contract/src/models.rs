@@ -6,20 +6,15 @@ use serde::{Deserialize, Serialize};
 pub struct TradeIntent {
     pub symbol: String,
     pub side: String,
-    pub notional_usd: f64,
+    pub notional_usd_cents: u64,
     pub venue: String,
-    pub confidence: f64,
-    pub daily_loss_usd: f64,
+    pub confidence_bps: u16,
+    pub daily_loss_usd_cents: u64,
 }
 
 impl TradeIntent {
-    pub fn has_valid_numbers(&self) -> bool {
-        self.notional_usd.is_finite()
-            && self.notional_usd >= 0.0
-            && self.daily_loss_usd.is_finite()
-            && self.daily_loss_usd >= 0.0
-            && self.confidence.is_finite()
-            && (0.0..=1.0).contains(&self.confidence)
+    pub fn has_valid_units(&self) -> bool {
+        self.confidence_bps <= 10_000
     }
 }
 
@@ -28,9 +23,9 @@ impl TradeIntent {
 pub struct Policy {
     pub allowed_symbols: Vec<String>,
     pub allowed_venues: Vec<String>,
-    pub max_trade_notional_usd: f64,
-    pub max_daily_loss_usd: f64,
-    pub min_confidence: f64,
+    pub max_trade_notional_usd_cents: u64,
+    pub max_daily_loss_usd_cents: u64,
+    pub min_confidence_bps: u16,
 }
 
 impl Policy {
@@ -39,12 +34,7 @@ impl Policy {
             && !self.allowed_venues.is_empty()
             && self.allowed_symbols.iter().all(|value| !value.is_empty())
             && self.allowed_venues.iter().all(|value| !value.is_empty())
-            && self.max_trade_notional_usd.is_finite()
-            && self.max_trade_notional_usd >= 0.0
-            && self.max_daily_loss_usd.is_finite()
-            && self.max_daily_loss_usd >= 0.0
-            && self.min_confidence.is_finite()
-            && (0.0..=1.0).contains(&self.min_confidence)
+            && self.min_confidence_bps <= 10_000
     }
 }
 
@@ -77,7 +67,7 @@ pub struct DecisionResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub side: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub notional_usd: Option<f64>,
+    pub notional_usd_cents: Option<u64>,
 }
 
 impl DecisionResponse {
@@ -87,7 +77,7 @@ impl DecisionResponse {
             reasons: alloc::vec![ReasonCode::InvalidInput],
             symbol: None,
             side: None,
-            notional_usd: None,
+            notional_usd_cents: None,
         }
     }
 }

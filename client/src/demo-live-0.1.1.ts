@@ -1,16 +1,29 @@
-import { connectAgent } from "./agent.js";
-import { readAgentAuthorization } from "./authorization.js";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
 import { parsePolicyDecision } from "./policy-decision.js";
-import { readRegistration } from "./registration.js";
+import { connectTenantAdmin } from "./tenant-admin.js";
 import {
-  DEFAULT_POLICY,
+  CONTRACT_TAIL,
   EVALUATE_TRADE_FUNCTION,
-  ORIGINAL_VERSION,
+  WORKAROUND_VERSION,
   type PolicyDecision,
   type ReasonCode,
   type TradeIntent,
-  type TradingPolicy,
 } from "./types.js";
+
+const DIAGNOSTIC_CONTRACT_ID = 868;
+const DIAGNOSTIC_REGISTRATION_PATH = fileURLToPath(
+  new URL("../contract-registration-0.1.1.json", import.meta.url),
+);
+
+interface DiagnosticRegistration {
+  tenantDid: string;
+  tail: string;
+  scriptName: string;
+  version: string;
+  contractId: number;
+}
 
 interface Scenario {
   name: string;
@@ -77,42 +90,6 @@ const scenarios: Scenario[] = [
   },
 ];
 
-function evaluateInTrustedLocalHarness(
-  intent: TradeIntent,
-  policy: TradingPolicy,
-): PolicyDecision {
-  const unitsValid =
-    Number.isSafeInteger(intent.notionalUsdCents) && intent.notionalUsdCents >= 0 &&
-    Number.isSafeInteger(intent.dailyLossUsdCents) && intent.dailyLossUsdCents >= 0 &&
-    Number.isSafeInteger(intent.confidenceBps) &&
-    intent.confidenceBps >= 0 &&
-    intent.confidenceBps <= 10_000;
-  if (!unitsValid) {
-    return parsePolicyDecision({
-      decision: "DENY",
-      reasons: ["INVALID_INPUT"],
-      symbol: intent.symbol,
-      side: intent.side,
-      notionalUsdCents: intent.notionalUsdCents,
-    });
-  }
-
-  const reasons: ReasonCode[] = [];
-  if (!policy.allowedSymbols.includes(intent.symbol)) reasons.push("SYMBOL_NOT_ALLOWED");
-  if (!policy.allowedVenues.includes(intent.venue)) reasons.push("VENUE_NOT_ALLOWED");
-  if (intent.notionalUsdCents > policy.maxTradeNotionalUsdCents) reasons.push("NOTIONAL_LIMIT_EXCEEDED");
-  if (intent.dailyLossUsdCents > policy.maxDailyLossUsdCents) reasons.push("DAILY_LOSS_LIMIT_EXCEEDED");
-  if (intent.confidenceBps < policy.minConfidenceBps) reasons.push("CONFIDENCE_TOO_LOW");
-  if (intent.side !== "BUY" && intent.side !== "SELL") reasons.push("INVALID_SIDE");
-  return parsePolicyDecision({
-    decision: reasons.length === 0 ? "ALLOW" : "DENY",
-    reasons,
-    symbol: intent.symbol,
-    side: intent.side,
-    notionalUsdCents: intent.notionalUsdCents,
-  });
-}
-
 function assertExpected(scenario: Scenario, actual: PolicyDecision): void {
   const reasonsMatch = JSON.stringify(actual.reasons) === JSON.stringify(scenario.expectedReasons);
   if (actual.decision !== scenario.expectedDecision || !reasonsMatch) {
@@ -123,43 +100,50 @@ function assertExpected(scenario: Scenario, actual: PolicyDecision): void {
   }
 }
 
-async function createEvaluator(): Promise<(intent: TradeIntent) => Promise<PolicyDecision>> {
-  if (!process.argv.includes("--live")) {
-    console.log("Mode: TRUSTED LOCAL HARNESS (no T3N invocation; no trade execution)\n");
-    return async (intent) => evaluateInTrustedLocalHarness(intent, DEFAULT_POLICY);
-  }
-
-  const registration = await readRegistration();
-  const authorization = await readAgentAuthorization();
-  if (
-    authorization.scriptName !== registration.scriptName ||
-    authorization.version !== registration.version
-  ) {
-    throw new Error("Agent authorization does not match the registered contract");
-  }
-  const { agentClient, agentDid } = await connectAgent();
-  if (agentDid !== authorization.agentDid) {
-    throw new Error("Authenticated agent does not match the authorized agent DID");
-  }
-  console.log(`Mode: LIVE T3N TESTNET TEE (${registration.scriptName}@${registration.version})`);
-  console.log(`Agent DID: ${agentDid}`);
-  console.log("Security note: testnet uses the documented unsafe trust-server workaround.\n");
-  return async (intent) => {
-    const response: unknown = await agentClient.executeAndDecode({
-      contract_id: registration.scriptName,
-      contract_version: ORIGINAL_VERSION,
-      function_name: EVALUATE_TRADE_FUNCTION,
-      pii_did: authorization.dataOwnerDid,
-      input: intent,
-    });
-    return parsePolicyDecision(response);
-  };
+if (process.env.AGENT_KEY !== undefined) {
+  throw new Error("Refusing 0.1.1 tenant demo: AGENT_KEY must not be present");
+}
+if (process.env.USER_KEY !== undefined) {
+  throw new Error("Refusing 0.1.1 tenant demo: USER_KEY must not be present");
+}
+if (!process.env.T3N_API_KEY) {
+  throw new Error("T3N_API_KEY is required for the 0.1.1 live tenant demo");
 }
 
-const evaluateIntent = await createEvaluator();
+const registration = JSON.parse(
+  await readFile(DIAGNOSTIC_REGISTRATION_PATH, "utf8"),
+) as Partial<DiagnosticRegistration>;
+if (
+  registration.contractId !== DIAGNOSTIC_CONTRACT_ID ||
+  registration.tail !== CONTRACT_TAIL ||
+  registration.version !== WORKAROUND_VERSION ||
+  typeof registration.scriptName !== "string" ||
+  typeof registration.tenantDid !== "string"
+) {
+  throw new Error(
+    `Diagnostic registration must identify contract ${DIAGNOSTIC_CONTRACT_ID} / ${CONTRACT_TAIL}@${WORKAROUND_VERSION}`,
+  );
+}
+
+const { tenant, tenantDid } = await connectTenantAdmin();
+if (tenantDid !== registration.tenantDid) {
+  throw new Error("Authenticated tenant DID does not match the 0.1.1 registration record");
+}
+
+console.log(
+  `Mode: LIVE T3N TESTNET TEE (${registration.scriptName}@${WORKAROUND_VERSION}, contract ${DIAGNOSTIC_CONTRACT_ID})`,
+);
+console.log(`Tenant DID: ${tenantDid}`);
+console.log("Security note: testnet uses the documented unsafe trust-server workaround.\n");
+
 let passed = 0;
 for (const scenario of scenarios) {
-  const decision = await evaluateIntent(scenario.intent);
+  const response: unknown = await tenant.contracts.execute(CONTRACT_TAIL, {
+    version: WORKAROUND_VERSION,
+    functionName: EVALUATE_TRADE_FUNCTION,
+    input: scenario.intent,
+  });
+  const decision = parsePolicyDecision(response);
   assertExpected(scenario, decision);
   passed += 1;
 

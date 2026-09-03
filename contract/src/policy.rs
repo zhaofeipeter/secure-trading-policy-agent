@@ -10,13 +10,13 @@ pub fn evaluate_json(input: &[u8], policy: &Policy) -> DecisionResponse {
 }
 
 pub fn evaluate(intent: &TradeIntent, policy: &Policy) -> DecisionResponse {
-    if !intent.has_valid_numbers() {
+    if !intent.has_valid_units() {
         return DecisionResponse {
             decision: Decision::Deny,
             reasons: alloc::vec![ReasonCode::InvalidInput],
             symbol: Some(intent.symbol.clone()),
             side: Some(intent.side.clone()),
-            notional_usd: Some(intent.notional_usd),
+            notional_usd_cents: Some(intent.notional_usd_cents),
         };
     }
 
@@ -36,13 +36,13 @@ pub fn evaluate(intent: &TradeIntent, policy: &Policy) -> DecisionResponse {
     {
         reasons.push(ReasonCode::VenueNotAllowed);
     }
-    if intent.notional_usd > policy.max_trade_notional_usd {
+    if intent.notional_usd_cents > policy.max_trade_notional_usd_cents {
         reasons.push(ReasonCode::NotionalLimitExceeded);
     }
-    if intent.daily_loss_usd > policy.max_daily_loss_usd {
+    if intent.daily_loss_usd_cents > policy.max_daily_loss_usd_cents {
         reasons.push(ReasonCode::DailyLossLimitExceeded);
     }
-    if intent.confidence < policy.min_confidence {
+    if intent.confidence_bps < policy.min_confidence_bps {
         reasons.push(ReasonCode::ConfidenceTooLow);
     }
     if intent.side != "BUY" && intent.side != "SELL" {
@@ -58,7 +58,7 @@ pub fn evaluate(intent: &TradeIntent, policy: &Policy) -> DecisionResponse {
         reasons,
         symbol: Some(intent.symbol.clone()),
         side: Some(intent.side.clone()),
-        notional_usd: Some(intent.notional_usd),
+        notional_usd_cents: Some(intent.notional_usd_cents),
     }
 }
 
@@ -70,9 +70,9 @@ mod tests {
         Policy {
             allowed_symbols: alloc::vec!["SOL".into(), "BTC".into()],
             allowed_venues: alloc::vec!["JUPITER".into()],
-            max_trade_notional_usd: 1_000.0,
-            max_daily_loss_usd: 500.0,
-            min_confidence: 0.8,
+            max_trade_notional_usd_cents: 100_000,
+            max_daily_loss_usd_cents: 50_000,
+            min_confidence_bps: 8_000,
         }
     }
 
@@ -80,10 +80,10 @@ mod tests {
         TradeIntent {
             symbol: "SOL".into(),
             side: "BUY".into(),
-            notional_usd: 500.0,
+            notional_usd_cents: 50_000,
             venue: "JUPITER".into(),
-            confidence: 0.91,
-            daily_loss_usd: 100.0,
+            confidence_bps: 9_100,
+            daily_loss_usd_cents: 10_000,
         }
     }
 
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn max_notional_is_enforced() {
         let mut value = intent();
-        value.notional_usd = 1_000.01;
+        value.notional_usd_cents = 100_001;
         assert_eq!(
             reason_codes(evaluate(&value, &policy())),
             alloc::vec![ReasonCode::NotionalLimitExceeded]
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn daily_loss_is_enforced() {
         let mut value = intent();
-        value.daily_loss_usd = 500.01;
+        value.daily_loss_usd_cents = 50_001;
         assert_eq!(
             reason_codes(evaluate(&value, &policy())),
             alloc::vec![ReasonCode::DailyLossLimitExceeded]
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn confidence_threshold_is_enforced() {
         let mut value = intent();
-        value.confidence = 0.79;
+        value.confidence_bps = 7_900;
         assert_eq!(
             reason_codes(evaluate(&value, &policy())),
             alloc::vec![ReasonCode::ConfidenceTooLow]
@@ -169,10 +169,10 @@ mod tests {
         let value = TradeIntent {
             symbol: "DOGE".into(),
             side: "HOLD".into(),
-            notional_usd: 2_000.0,
+            notional_usd_cents: 200_000,
             venue: "BINANCE".into(),
-            confidence: 0.2,
-            daily_loss_usd: 900.0,
+            confidence_bps: 2_000,
+            daily_loss_usd_cents: 90_000,
         };
         assert_eq!(
             reason_codes(evaluate(&value, &policy())),
@@ -204,9 +204,20 @@ mod tests {
     }
 
     #[test]
-    fn negative_notional_is_invalid_input() {
+    fn negative_notional_json_is_invalid_input() {
+        assert_eq!(
+            reason_codes(evaluate_json(
+                br#"{"symbol":"SOL","side":"BUY","notionalUsdCents":-1,"venue":"JUPITER","confidenceBps":9100,"dailyLossUsdCents":10000}"#,
+                &policy()
+            )),
+            alloc::vec![ReasonCode::InvalidInput]
+        );
+    }
+
+    #[test]
+    fn confidence_above_ten_thousand_bps_is_invalid_input() {
         let mut value = intent();
-        value.notional_usd = -1.0;
+        value.confidence_bps = 10_001;
         assert_eq!(
             reason_codes(evaluate(&value, &policy())),
             alloc::vec![ReasonCode::InvalidInput]
@@ -216,9 +227,9 @@ mod tests {
     #[test]
     fn boundaries_are_inclusive() {
         let mut value = intent();
-        value.notional_usd = 1_000.0;
-        value.daily_loss_usd = 500.0;
-        value.confidence = 0.8;
+        value.notional_usd_cents = 100_000;
+        value.daily_loss_usd_cents = 50_000;
+        value.confidence_bps = 8_000;
         assert_eq!(evaluate(&value, &policy()).decision, Decision::Allow);
     }
 
@@ -229,6 +240,6 @@ mod tests {
         let json = serde_json::to_string(&evaluate(&value, &policy())).expect("serialize response");
         assert!(json.contains("\"decision\":\"DENY\""));
         assert!(json.contains("\"INVALID_SIDE\""));
-        assert!(json.contains("\"notionalUsd\":500.0"));
+        assert!(json.contains("\"notionalUsdCents\":50000"));
     }
 }

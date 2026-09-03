@@ -2,7 +2,7 @@
 ///
 /// The host supplies the tenant identity and durable tenant-scoped KV store.
 /// This component has no HTTP, wallet, exchange, or trading capability.
-package z:trading-policy@0.1.0;
+package z:trading-policy@0.1.1;
 
 world trading-policy {
     import host:tenant/tenant-context@1.0.0;
@@ -20,7 +20,7 @@ interface contracts {
     }
 
     /// Evaluate a proposed trade against policy stored at
-    /// z:<authenticated-tenant>:trading-policy/current.
+    /// z:<authenticated-tenant>:trading-policy-config/current.
     /// This function authorizes or denies; it never executes a trade.
     evaluate-trade: func(req: generic-input) -> result<list<u8>, string>;
 }
